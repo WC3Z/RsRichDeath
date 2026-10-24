@@ -1,0 +1,12 @@
+{
+    "name": "Rich Death",
+    "version": "1.0.0",
+    "contactEmailAddress": "wc3zrs@gmail.com",
+    "requiredDependencies": {
+        "prettyui": 6398181
+    },
+    "optionalPermissions": [
+        "chatAccess"
+    ],
+    "hasRibbonIcon": true
+}

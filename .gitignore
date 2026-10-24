@@ -1,0 +1,11 @@
+Rich-Death/
+
+
+configFiles/
+
+debug/
+
+.idea/
+
+.luarc.json
+build.local.sh
