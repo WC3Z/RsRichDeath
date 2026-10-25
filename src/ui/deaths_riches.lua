@@ -19,25 +19,13 @@ local riches_size = 1.5
 ---@field height number How far above the ground there the riches float
 ---@field items string[] The riches' models, as names in id.Model, drawn together
 ---@field item_scale number How big the items are drawn inside their model
----@field tilt_scale? number What the items' tilt is multiplied by (default 1)
----@field extra_tilt? number Degrees added to the items' tilt after scaling (default 0)
---- The partyhat's inventory model looks right as it is, but furniture models
---- need their own tilt: too little with a high camera, too much with a low one.
 
 ---@type RichesSpot
 local desk = { tile = { 0, 6, 10, 29, 38 }, height = 1150, items = { "INV_PARTYHAT" }, item_scale = 1 }
--- The hoard is made to stand on its plinth: without it, the gold on top of the
--- plinth floats above the gold on the floor.
+-- Only inventory models for now: furniture models are oriented differently and
+-- didn't tilt right with the camera, whatever the settings.
 ---@type RichesSpot
-local top_left_corner = {
-    tile = { 0, 6, 10, 26, 42 },
-    height = 0,
-    items = { "HUMAN_FURNITURE_GOLD_PILE_HOARD_LARGE", "HUMAN_FURNITURE_GOLD_PILE_PLINTH" },
-    item_scale = 1,
-    -- Tuned by eye against the books around it, from level and from above.
-    tilt_scale = 1.4,
-    extra_tilt = 0,
-}
+local top_left_corner = { tile = { 0, 6, 10, 26, 42 }, height = 0, items = { "INV_GOLDPEICES_10000" }, item_scale = 1 }
 
 ---@type RichesSpot[]
 local riches_spots = { desk, top_left_corner }
@@ -105,11 +93,9 @@ local function create_tilted_model(riches_spot, tilt)
     model.hidden = true
 
     local body = ui.NPCCustomisation.new(true) -- true: customise the body, not the chat head
-    -- Past 90 degrees the items would tip over, beyond seen straight from above.
-    local slot_tilt = math.min(max_tilt, tilt * (riches_spot.tilt_scale or 1) + (riches_spot.extra_tilt or 0))
     for slot, item in ipairs(riches_spot.items) do
         body:SetModelSlot(slot - 1, id.Model[item], riches_spot.item_scale, Vector3.new(0, 0, 0),
-            Vector3.new(0, -math.rad(slot_tilt), 0))
+            Vector3.new(0, -math.rad(tilt), 0))
     end
     model.npcCustomisation = body
     return model

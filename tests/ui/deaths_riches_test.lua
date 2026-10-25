@@ -12,9 +12,7 @@ local all_model_count = 2 * models_per_spot
 
 -- The spots, in the order their models are built.
 local desk = { first_model = 1, position = fake_game.desk, height = 1150 }
-local top_left_corner = {
-    first_model = models_per_spot + 1, position = fake_game.top_left_corner, height = 0, tilt_scale = 1.4, extra_tilt = 0,
-}
+local top_left_corner = { first_model = models_per_spot + 1, position = fake_game.top_left_corner, height = 0 }
 
 -- Fresh fakes, with the riches stopped from any earlier test.
 local function install()
@@ -90,13 +88,9 @@ function tests.builds_a_model_for_every_three_degrees_of_tilt_at_each_spot()
 
     assert_helpers.equal(#game.models, all_model_count)
     for _, spot in ipairs({ desk, top_left_corner }) do
-        -- The slot's tilt, rounded like tilt_of does.
-        local function slot_tilt(tilt)
-            return math.floor(math.min(90, tilt * (spot.tilt_scale or 1) + (spot.extra_tilt or 0)) + 0.5)
-        end
-        assert_helpers.equal(fake_game.tilt_of(game.models[spot.first_model]), slot_tilt(0))
-        assert_helpers.equal(fake_game.tilt_of(game.models[spot.first_model + 1]), slot_tilt(3))
-        assert_helpers.equal(fake_game.tilt_of(game.models[spot.first_model + 30]), slot_tilt(90))
+        assert_helpers.equal(fake_game.tilt_of(game.models[spot.first_model]), 0)
+        assert_helpers.equal(fake_game.tilt_of(game.models[spot.first_model + 1]), 3)
+        assert_helpers.equal(fake_game.tilt_of(game.models[spot.first_model + 30]), 90)
     end
 end
 
@@ -111,8 +105,8 @@ function tests.puts_each_of_a_spots_items_in_its_own_slot()
     assert_helpers.equal(desk_slots.scale, 1)
 
     local corner_slots = game.models[top_left_corner.first_model].npcCustomisation
-    assert_helpers.equal(corner_slots.items[0], "HUMAN_FURNITURE_GOLD_PILE_HOARD_LARGE")
-    assert_helpers.equal(corner_slots.items[1], "HUMAN_FURNITURE_GOLD_PILE_PLINTH")
+    assert_helpers.equal(corner_slots.items[0], "INV_GOLDPEICES_10000")
+    assert_helpers.equal(corner_slots.items[1], nil)
 end
 
 function tests.loads_every_model_tiny_in_the_corner_first()
