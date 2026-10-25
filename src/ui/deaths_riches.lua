@@ -1,28 +1,46 @@
 local db = require("src/database/db")
 
--- Draws Death's riches: a game model on a screen layer, moved every frame so it
--- looks like it stands in Death's office.
+-- Draws Death's riches: game models on a screen layer, moved every frame so
+-- they look like they stand in Death's office.
 local deaths_riches = {}
 
 local subscription_name = "deaths-riches"
 
--- How big the model's component is on screen, in pixels.
+-- How big each model's component is on screen, in pixels.
 local model_size = 400
--- How big the partyhat is drawn inside the model.
-local hat_scale = 0.9
 -- How much bigger than real life the riches look in the world.
 local riches_size = 1.5
 
--- A place in the world where riches are drawn: its tile, and how far above
--- the ground there they float.
--- The tile is kept as the arguments for CoordGrid.new, so nothing from the
--- game is needed until the riches are drawn.
+-- A place in the world where riches are drawn. The tile and the items are kept
+-- as plain values (the arguments for CoordGrid.new, and names in id.Model),
+-- so nothing from the game is needed until the riches are drawn.
 ---@class RichesSpot
 ---@field tile integer[] Arguments for CoordGrid.new
----@field height number
+---@field height number How far above the ground there the riches float
+---@field items string[] The riches' models, as names in id.Model, drawn together
+---@field item_scale number How big the items are drawn inside their model
+---@field tilt_scale? number What the items' tilt is multiplied by (default 1)
+---@field extra_tilt? number Degrees added to the items' tilt after scaling (default 0)
+--- The partyhat's inventory model looks right as it is, but furniture models
+--- need their own tilt: too little with a high camera, too much with a low one.
 
 ---@type RichesSpot
-local desk = { tile = { 0, 6, 10, 29, 38 }, height = 1150 }
+local desk = { tile = { 0, 6, 10, 29, 38 }, height = 1150, items = { "INV_PARTYHAT" }, item_scale = 1 }
+-- The hoard is made to stand on its plinth: without it, the gold on top of the
+-- plinth floats above the gold on the floor.
+---@type RichesSpot
+local top_left_corner = {
+    tile = { 0, 6, 10, 26, 42 },
+    height = 0,
+    items = { "HUMAN_FURNITURE_GOLD_PILE_HOARD_LARGE", "HUMAN_FURNITURE_GOLD_PILE_PLINTH" },
+    item_scale = 1,
+    -- Tuned by eye against the books around it, from level and from above.
+    tilt_scale = 1.4,
+    extra_tilt = 0,
+}
+
+---@type RichesSpot[]
+local riches_spots = { desk, top_left_corner }
 
 -- The middle of the spot's tile, in fine coordinates.
 ---@param riches_spot RichesSpot
@@ -31,13 +49,19 @@ local function tile_position(riches_spot)
     return CoordGrid.new(table.unpack(riches_spot.tile)):ToCoordFine(true).position
 end
 
--- The hat is tilted towards the camera in steps of this many degrees, from
--- level (0) to straight down (90).
+-- The riches are tilted towards the camera in steps of this many degrees,
+-- from level (0) to straight down (90).
+-- TODO: the riches don't turn as the camera goes around them, so they always
+-- show the same side, which is easy to spot on the coin pile. What was tried:
+-- the slot's x axis turns them around the vertical, but together with the tilt
+-- on y it leans them sideways (the game applies the axes in another order); a
+-- model per tilt and direction is too many models; ui.Model:SetTransform
+-- doesn't change what's drawn.
 local tilt_step = 3
 local max_tilt = 90
 
--- Further than this from the spot, the camera can't be in Death's office, so
--- the hat is hidden. The camera was about 3,000-10,000 away in the office.
+-- Further than this from a spot, the camera can't be in Death's office, so its
+-- riches are hidden. The camera was about 3,000-10,000 away in the office.
 local max_camera_distance = 30000
 
 -- The player counts as in Death's office within this many tiles of his desk.
@@ -47,13 +71,15 @@ local office_radius = 40
 local tile_size = 512
 
 local root
--- One model per tilt step, all loaded up front. Changing a model's tilt means
--- reloading it, which takes long enough to lag behind the camera, so instead
--- the model with the closest tilt is shown and the rest are hidden.
----@type table[]
+-- For each spot, one model per tilt step, all loaded up front. Changing a
+-- model's tilt means reloading it, which takes long enough to lag behind the
+-- camera, so instead the model with the closest tilt is shown and the rest are
+-- hidden.
+---@type table<RichesSpot, table[]>
 local tilted_models = {}
--- The model from tilted_models that is shown, if any.
-local shown_model
+-- The model shown for each spot, if any.
+---@type table<RichesSpot, table>
+local shown_models = {}
 -- A model only loads once it's shown, and flickers while it does. So at start
 -- every model is shown out of sight for this many frames (about half a second
 -- was enough in testing) to load them before they're needed. Off screen
@@ -65,11 +91,13 @@ local preload_frames_left = 0
 local in_office = false
 
 -- A model on its own always faces the camera, but an NPC whose body is
--- replaced by the item can be rotated, through the rotation of its model slot.
--- In the slot's rotation, y is what tilts the hat towards the camera, and it
+-- replaced by the items can be rotated, through the rotation of its model
+-- slots. Each item goes in its own slot.
+-- In the slots' rotation, y is what tilts the items towards the camera, and it
 -- turns the other way from the camera (both found by testing).
+---@param riches_spot RichesSpot
 ---@param tilt number Degrees
-local function create_tilted_model(tilt)
+local function create_tilted_model(riches_spot, tilt)
     local model = ui.Model.new(root)
     model:SetSize(model_size, model_size) -- a component without a size is invisible
     model:SetModel(ui.ModelType.NPC_MODEL, id.NPC.HANS) -- any NPC; the customisation replaces all of him
@@ -77,27 +105,44 @@ local function create_tilted_model(tilt)
     model.hidden = true
 
     local body = ui.NPCCustomisation.new(true) -- true: customise the body, not the chat head
-    body:SetModelSlot(0, id.Model.INV_PARTYHAT, hat_scale, Vector3.new(0, 0, 0), Vector3.new(0, -math.rad(tilt), 0))
+    -- Past 90 degrees the items would tip over, beyond seen straight from above.
+    local slot_tilt = math.min(max_tilt, tilt * (riches_spot.tilt_scale or 1) + (riches_spot.extra_tilt or 0))
+    for slot, item in ipairs(riches_spot.items) do
+        body:SetModelSlot(slot - 1, id.Model[item], riches_spot.item_scale, Vector3.new(0, 0, 0),
+            Vector3.new(0, -math.rad(slot_tilt), 0))
+    end
     model.npcCustomisation = body
     return model
 end
 
 local function create_models()
     root = ui.Interfaces:GetComponent(id.Component.TOPLEVEL_V2__PLUGIN_BUILD_LAYER_TOP)
-    for tilt = 0, max_tilt, tilt_step do
-        table.insert(tilted_models, create_tilted_model(tilt))
+    for _, riches_spot in ipairs(riches_spots) do
+        tilted_models[riches_spot] = {}
+        for tilt = 0, max_tilt, tilt_step do
+            table.insert(tilted_models[riches_spot], create_tilted_model(riches_spot, tilt))
+        end
+    end
+end
+
+---@param action fun(model: table)
+local function for_each_model(action)
+    for _, models in pairs(tilted_models) do
+        for _, model in ipairs(models) do
+            action(model)
+        end
     end
 end
 
 local function start_preload()
-    for _, model in ipairs(tilted_models) do
+    for_each_model(function (model)
         model:SetSize(1, 1)
         model:SetPos(0, 0)
         -- The model isn't cut off at its size, so it's also zoomed far out to
-        -- make the hat too small to notice.
+        -- make the item too small to notice.
         model.viewDistance = 100000
         model.hidden = false
-    end
+    end)
     preload_frames_left = preload_frames
 end
 
@@ -109,26 +154,30 @@ local function continue_preload()
     end
     preload_frames_left = preload_frames_left - 1
     if preload_frames_left == 0 then
-        for _, model in ipairs(tilted_models) do
+        for_each_model(function (model)
             model.hidden = true
             model:SetSize(model_size, model_size)
-        end
+        end)
     end
     return true
 end
 
--- The model whose tilt is closest to how far the camera looks down on the spot.
+-- The spot's model whose tilt is closest to how far the camera looks down on it.
+---@param riches_spot RichesSpot
 ---@param camera_elevation number Radians
-local function model_for(camera_elevation)
+local function model_for(riches_spot, camera_elevation)
     local tilt = math.max(0, math.min(max_tilt, math.deg(camera_elevation)))
-    return tilted_models[math.floor(tilt / tilt_step + 0.5) + 1]
+    return tilted_models[riches_spot][math.floor(tilt / tilt_step + 0.5) + 1]
 end
 
-local function show(model)
+---@param riches_spot RichesSpot
+---@param model? table The model to show at the spot, or nil to show none
+local function show(riches_spot, model)
+    local shown_model = shown_models[riches_spot]
     if model == shown_model then return end
     if shown_model then shown_model.hidden = true end
-    shown_model = model
-    if shown_model then shown_model.hidden = false end
+    shown_models[riches_spot] = model
+    if model then model.hidden = false end
 end
 
 -- Where in the world the riches at the given spot are drawn. nil while the
@@ -155,25 +204,23 @@ local function is_on_screen(point)
         and point.y >= 0 and point.y <= root.height
 end
 
-local function draw()
-    if continue_preload() then return end
-    if not in_office then
-        show(nil)
+---@param riches_spot RichesSpot
+local function draw_spot(riches_spot)
+    local spot = find_spot(riches_spot)
+    if not spot then
+        show(riches_spot, nil)
         return
     end
-    if not World.IsAvailable() then return end
-    local spot = find_spot(desk)
-    if not spot then return end
 
     local to_camera = Camera.GetPosition() - spot
     local on_screen = ScreenConvert.Vector3ToScreen(spot)
     if to_camera.length > max_camera_distance or not is_on_screen(on_screen) then
-        show(nil)
+        show(riches_spot, nil)
         return
     end
 
     local camera_elevation = math.atan(to_camera.y, math.sqrt(to_camera.x ^ 2 + to_camera.z ^ 2))
-    local model = model_for(camera_elevation)
+    local model = model_for(riches_spot, camera_elevation)
 
     -- Centred on the spot.
     model:SetPos(math.floor(on_screen.x) - model_size // 2, math.floor(on_screen.y) - model_size // 2)
@@ -181,12 +228,23 @@ local function draw()
     -- Zooms the model out as the camera moves away, so it keeps the size it
     -- would have in the world. Only set when it changes, in case setting it
     -- every frame stops the model from showing.
-    local view_distance = math.floor(to_camera.length * model_size / root.width / hat_scale / riches_size)
+    local view_distance = math.floor(to_camera.length * model_size / root.width / riches_spot.item_scale / riches_size)
     if view_distance ~= model.viewDistance then
         model.viewDistance = view_distance
     end
 
-    show(model)
+    show(riches_spot, model)
+end
+
+local function draw()
+    if continue_preload() then return end
+    for _, riches_spot in ipairs(riches_spots) do
+        if in_office and World.IsAvailable() then
+            draw_spot(riches_spot)
+        else
+            show(riches_spot, nil)
+        end
+    end
 end
 
 -- How many tiles the player is from Death's desk, ignoring height.
@@ -206,7 +264,7 @@ function deaths_riches.start()
         return
     end
     -- Already started, so its models are already there.
-    if #tilted_models > 0 then
+    if next(tilted_models) then
         return
     end
     create_models()
@@ -218,12 +276,12 @@ end
 function deaths_riches.stop()
     Event.Draw.Unsubscribe(subscription_name)
     Event.ServerLogic.Unsubscribe(subscription_name)
-    for _, model in ipairs(tilted_models) do
+    for_each_model(function (model)
         model:Destroy()
-    end
+    end)
     tilted_models = {}
+    shown_models = {}
     preload_frames_left = 0
-    shown_model = nil
     root = nil
     in_office = false
 end

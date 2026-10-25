@@ -28,18 +28,31 @@ local function coord_grid(x, z)
     }
 end
 
--- Where CoordGrid.new(0, 6, 10, 29, 38), Death's desk, is in fine coordinates.
-fake_game.desk = { x = (6 * 64 + 29) * tile_size + tile_size // 2, z = (10 * 64 + 38) * tile_size + tile_size // 2 }
+-- The middle of a tile in map square (6, 10), in fine coordinates.
+local function office_tile(tile_x, tile_z)
+    return { x = (6 * 64 + tile_x) * tile_size + tile_size // 2, z = (10 * 64 + tile_z) * tile_size + tile_size // 2 }
+end
+
+-- Where the riches spots are, in fine coordinates.
+fake_game.desk = office_tile(29, 38)
+fake_game.top_left_corner = office_tile(26, 42)
+
+-- Where a world point shows on screen: the desk in the middle of a
+-- 1920x1080 screen, and other points 1 pixel off per 100 fine units.
+local function screen_point(point)
+    return { x = 960 + (point.x - fake_game.desk.x) / 100, y = 500 + (point.z - fake_game.desk.z) / 100 }
+end
+fake_game.screen_point = screen_point
 
 -- Installs the fakes. The returned table controls them:
 --   models           every model created, in order
 --   ground_height    what World.GetGroundHeight returns
 --   camera           Camera.GetPosition()
---   on_screen        what ScreenConvert.Vector3ToScreen returns (nil for off screen)
---   converted        the last point given to ScreenConvert.Vector3ToScreen
+--   to_screen(point)   what ScreenConvert.Vector3ToScreen returns for a point
+--   converted        every point given to ScreenConvert.Vector3ToScreen
 --   move_player(x, z)  puts the player at the given fine coordinates
 function fake_game.install()
-    local game = { models = {}, ground_height = 3328, on_screen = { x = 960, y = 500 } }
+    local game = { models = {}, ground_height = 3328, to_screen = screen_point, converted = {} }
     game.camera = vector3(fake_game.desk.x, 3328 + 1150 + 3000, fake_game.desk.z + 3000)
     local player = coord_grid(fake_game.desk.x, fake_game.desk.z)
 
@@ -55,7 +68,8 @@ function fake_game.install()
                 (square_z * 64 + tile_z) * tile_size + tile_size // 2)
         end,
     }
-    id = { Component = {}, NPC = {}, Model = {} }
+    -- Any id.Model name gives back the name, so a slot's item can be checked.
+    id = { Component = {}, NPC = {}, Model = setmetatable({}, { __index = function(_, name) return name end }) }
 
     -- A model remembers its size, position, viewDistance, hidden and slot rotation.
     local function new_model(parent)
@@ -78,9 +92,12 @@ function fake_game.install()
         ModelType = {},
         NPCCustomisation = {
             new = function()
+                -- Keeps each slot's item, and the scale and rotation of the last one set.
                 return {
-                    SetModelSlot = function(self, _, _, _, _, rotation)
-                        self.rotation = rotation
+                    items = {},
+                    SetModelSlot = function(self, slot, item, scale, _, rotation)
+                        self.items[slot] = item
+                        self.scale, self.rotation = scale, rotation
                     end,
                 }
             end,
@@ -93,8 +110,8 @@ function fake_game.install()
     Camera = { GetPosition = function() return game.camera end }
     ScreenConvert = {
         Vector3ToScreen = function(point)
-            game.converted = point
-            return game.on_screen
+            table.insert(game.converted, point)
+            return game.to_screen(point)
         end,
     }
     Player = {
