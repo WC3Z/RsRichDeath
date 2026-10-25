@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+# Runs the tests before every commit and stops the commit if any fail.
+# Turned on per clone with: git config core.hooksPath .githooks
+set -euo pipefail
+
+cd "$(git rev-parse --show-toplevel)"
+
+lua_command=""
+for candidate in lua5.4 lua; do
+    if command -v "$candidate" >/dev/null; then
+        lua_command="$candidate"
+        break
+    fi
+done
+if [[ -z "$lua_command" ]]; then
+    echo "pre-commit: Lua 5.4 not found, can't run the tests" >&2
+    exit 1
+fi
+
+if ! "$lua_command" tests/run.lua; then
+    echo "pre-commit: tests failed, commit stopped (git commit --no-verify skips this)" >&2
+    exit 1
+fi
