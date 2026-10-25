@@ -124,16 +124,16 @@ function tests.reopening_the_page_replaces_the_old_one()
     assert_helpers.equal(created[2].destroyed, nil)
 end
 
-function tests.checkbox_shows_and_saves_the_render_setting()
-    local created = start()
-    open_page()
-    local checkbox = created[1].checkboxes.renderDeathRiches
-
-    assert_helpers.equal(checkbox.selected, true)
-    checkbox.on_change(nil, nil, nil, false)
-
-    assert_helpers.equal(db.get_render_deaths_riches(), false)
-end
+--function tests.checkbox_shows_and_saves_the_render_setting()
+--    local created = start()
+--    open_page()
+--    local checkbox = created[1].checkboxes.renderDeathRiches
+--
+--    assert_helpers.equal(checkbox.selected, true)
+--    checkbox.on_change(nil, nil, nil, false)
+--
+--    assert_helpers.equal(db.get_render_deaths_riches(), false)
+--end
 
 function tests.stop_removes_the_page_and_stops_listening()
     local created = start()

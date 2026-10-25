@@ -73,19 +73,19 @@ function content_view.start()
 
         prettyui.Tooltip.bind(tooltip_owner, text, view.content, tooltip)
 
-        view:AddCheckboxButton({
-            {
-                text = "Render Death's riches",
-                value = "renderDeathRiches",
-                selected = db.get_render_deaths_riches(),
-                tooltip = nil
-            }
-        },
-            {
-                onChange = function (_, _, _, selected)
-                    db.set_render_deaths_riches(selected)
-                end
-            })
+        --view:AddCheckboxButton({
+        --    {
+        --        text = "Render Death's riches",
+        --        value = "renderDeathRiches",
+        --        selected = db.get_render_deaths_riches(),
+        --        tooltip = nil
+        --    }
+        --},
+        --    {
+        --        onChange = function (_, _, _, selected)
+        --            db.set_render_deaths_riches(selected)
+        --        end
+        --    })
     end)
 end
 
