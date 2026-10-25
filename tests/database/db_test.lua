@@ -7,7 +7,7 @@ local tests = {}
 function tests.renders_deaths_riches_until_turned_off()
     fake_persistent_db.install()
 
-    assert_helpers.equal(db.render_deaths_riches(), true)
+    assert_helpers.equal(db.get_render_deaths_riches(), true)
 end
 
 function tests.remembers_that_deaths_riches_were_turned_off()
@@ -15,7 +15,7 @@ function tests.remembers_that_deaths_riches_were_turned_off()
 
     db.set_render_deaths_riches(false)
 
-    assert_helpers.equal(db.render_deaths_riches(), false)
+    assert_helpers.equal(db.get_render_deaths_riches(), false)
 end
 
 function tests.death_cost_starts_at_zero()

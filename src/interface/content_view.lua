@@ -45,6 +45,7 @@ local function format_gp_short(gp)
     return format_gp(gp)
 end
 
+---@param deathCost Integer
 function getTooltip(deathCost)
     local tooltip = deathCost >= 100 * thousand and format_gp(deathCost) or nil
     return tooltip
@@ -76,7 +77,7 @@ function content_view.start()
             {
                 text = "Render Death's riches",
                 value = "renderDeathRiches",
-                selected = db.render_deaths_riches(),
+                selected = db.get_render_deaths_riches(),
                 tooltip = nil
             }
         },

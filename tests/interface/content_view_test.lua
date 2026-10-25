@@ -132,7 +132,7 @@ function tests.checkbox_shows_and_saves_the_render_setting()
     assert_helpers.equal(checkbox.selected, true)
     checkbox.on_change(nil, nil, nil, false)
 
-    assert_helpers.equal(db.render_deaths_riches(), false)
+    assert_helpers.equal(db.get_render_deaths_riches(), false)
 end
 
 function tests.stop_removes_the_page_and_stops_listening()

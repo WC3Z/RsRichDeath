@@ -3,8 +3,9 @@ local Db = {}
 local render_deaths_riches_key = "renderDeathRiches"
 local death_cost_key = "deathCost"
 
--- Check if the player wants to render death's riches. If they haven't toggled the setting we default to true
-function Db.render_deaths_riches()
+-- Get whether we should render death's riches or not
+---@return boolean
+function Db.get_render_deaths_riches()
     local saved = PersistentDB:GetBool(render_deaths_riches_key)
     if saved == nil then
         return true
@@ -12,6 +13,16 @@ function Db.render_deaths_riches()
     return saved
 end
 
+
+-- Set whether we should render death's riches or not
+---@param selected boolean
+function Db.set_render_deaths_riches(selected)
+    PersistentDB:SetBool(render_deaths_riches_key, selected)
+end
+
+
+-- Gets the total death cost
+---@return integer
 function Db.get_death_cost()
     local saved = PersistentDB:GetInt(death_cost_key)
     if saved == nil then
@@ -20,13 +31,11 @@ function Db.get_death_cost()
     return saved
 end
 
+-- Adds deaths cost to the existing amount
+---@param cost Integer
 function Db.add_death_cost(cost)
     local currentCost = Db.get_death_cost()
     PersistentDB:SetInt(death_cost_key, currentCost + cost)
-end
-
-function Db.set_render_deaths_riches(selected)
-    PersistentDB:SetBool(render_deaths_riches_key, selected)
 end
 
 return Db
