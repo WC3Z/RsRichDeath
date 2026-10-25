@@ -5,7 +5,7 @@ local test_files = {
     "tests/database/db_test",
     "tests/tracker/death_cost_listener_test",
     "tests/interface/content_view_test",
-    "tests/ui/deaths_riches_test",
+    "tests/world/deaths_riches_test",
 }
 
 local passed, failed = 0, 0

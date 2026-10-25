@@ -3,7 +3,7 @@ ExecuteConsoleCommand("ppe Rich-Death chatAccess")
 
 local content_view = require("src/interface/content_view")
 local death_cost_listener = require("src/tracker/death_cost_listener")
-local deaths_riches =  require("src/ui/deaths_riches")
+local deaths_riches =  require("src/world/deaths_riches")
 
 content_view.start()
 death_cost_listener.start()

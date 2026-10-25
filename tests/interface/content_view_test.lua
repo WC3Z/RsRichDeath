@@ -1,5 +1,5 @@
 local content_view = require("src/interface/content_view")
-local deaths_riches = require("src/ui/deaths_riches")
+local deaths_riches = require("src/world/deaths_riches")
 local db = require("src/database/db")
 local assert_helpers = require("tests/helpers/assert")
 local fake_event = require("tests/helpers/fake_event")

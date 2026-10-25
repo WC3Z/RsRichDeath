@@ -1,5 +1,5 @@
 local db = require("src/database/db")
-local deaths_riches = require("src/ui/deaths_riches")
+local deaths_riches = require("src/world/deaths_riches")
 local content_view = {}
 local text
 local view
