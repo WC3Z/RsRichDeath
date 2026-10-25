@@ -1,7 +1,9 @@
 local content_view = require("src/interface/content_view")
+local deaths_riches = require("src/ui/deaths_riches")
 local db = require("src/database/db")
 local assert_helpers = require("tests/helpers/assert")
 local fake_event = require("tests/helpers/fake_event")
+local fake_game = require("tests/helpers/fake_game")
 local fake_persistent_db = require("tests/helpers/fake_persistent_db")
 local fake_prettyui = require("tests/helpers/fake_prettyui")
 
@@ -9,8 +11,10 @@ local fake_prettyui = require("tests/helpers/fake_prettyui")
 ---@return table created Every view the content view has made
 local function start(death_cost)
     content_view.stop()
+    deaths_riches.stop()
     fake_persistent_db.install()
     fake_event.install()
+    fake_game.install()
     local created = fake_prettyui.install()
     if death_cost then
         db.add_death_cost(death_cost)
@@ -133,6 +137,27 @@ function tests.checkbox_shows_and_saves_the_render_setting()
     checkbox.on_change(nil, nil, nil, false)
 
     assert_helpers.equal(db.get_render_deaths_riches(), false)
+end
+
+function tests.unticking_the_checkbox_stops_the_riches()
+    local created = start()
+    deaths_riches.start()
+    open_page()
+
+    created[1].checkboxes.renderDeathRiches.on_change(nil, nil, nil, false)
+
+    assert_helpers.equal(next(Event.Draw.subscribers), nil)
+end
+
+function tests.ticking_the_checkbox_starts_the_riches()
+    local created = start()
+    db.set_render_deaths_riches(false)
+    open_page()
+
+    created[1].checkboxes.renderDeathRiches.on_change(nil, nil, nil, true)
+
+    assert_helpers.equal(db.get_render_deaths_riches(), true)
+    assert_helpers.equal(type(Event.Draw.subscribers["deaths-riches"]), "function")
 end
 
 function tests.stop_removes_the_page_and_stops_listening()

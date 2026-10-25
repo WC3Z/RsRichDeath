@@ -19,6 +19,8 @@ function fake_event.install()
     Event = {
         ChatMessage = new_event(),
         ContentLayerReady = new_event(),
+        Draw = new_event(),
+        ServerLogic = new_event(),
     }
     ChatType = { GENERAL = "GENERAL", OTHER = "OTHER" }
 end

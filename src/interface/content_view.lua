@@ -1,5 +1,5 @@
 local db = require("src/database/db")
-
+local deaths_riches = require("src/ui/deaths_riches")
 local content_view = {}
 local text
 local view
@@ -84,6 +84,11 @@ function content_view.start()
             {
                 onChange = function (_, _, _, selected)
                     db.set_render_deaths_riches(selected)
+                    if selected then
+                        deaths_riches.start()
+                    else
+                        deaths_riches.stop()
+                    end
                 end
             })
     end)

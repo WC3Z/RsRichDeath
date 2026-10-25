@@ -1,3 +1,5 @@
+local db = require("src/database/db")
+
 -- Draws Death's riches: a game model on a screen layer, moved every frame so it
 -- looks like it stands in Death's office.
 local deaths_riches = {}
@@ -13,12 +15,21 @@ local riches_size = 1.5
 
 -- A place in the world where riches are drawn: its tile, and how far above
 -- the ground there they float.
+-- The tile is kept as the arguments for CoordGrid.new, so nothing from the
+-- game is needed until the riches are drawn.
 ---@class RichesSpot
----@field tile CoordGrid
+---@field tile integer[] Arguments for CoordGrid.new
 ---@field height number
 
 ---@type RichesSpot
-local desk = { tile = CoordGrid.new(0, 6, 10, 29, 38), height = 1150 }
+local desk = { tile = { 0, 6, 10, 29, 38 }, height = 1150 }
+
+-- The middle of the spot's tile, in fine coordinates.
+---@param riches_spot RichesSpot
+---@return Vector3
+local function tile_position(riches_spot)
+    return CoordGrid.new(table.unpack(riches_spot.tile)):ToCoordFine(true).position
+end
 
 -- The hat is tilted towards the camera in steps of this many degrees, from
 -- level (0) to straight down (90).
@@ -29,6 +40,12 @@ local max_tilt = 90
 -- the hat is hidden. The camera was about 3,000-10,000 away in the office.
 local max_camera_distance = 30000
 
+-- The player counts as in Death's office within this many tiles of his desk.
+-- The furthest point in the office is about 28 tiles away.
+local office_radius = 40
+-- Fine coordinates per tile.
+local tile_size = 512
+
 local root
 -- One model per tilt step, all loaded up front. Changing a model's tilt means
 -- reloading it, which takes long enough to lag behind the camera, so instead
@@ -37,14 +54,15 @@ local root
 local tilted_models = {}
 -- The model from tilted_models that is shown, if any.
 local shown_model
--- The riches are only drawn while Death is loaded, so they don't show up
--- elsewhere in the world.
-local death_is_loaded = false
--- DEBUG: draws the riches whether Death is loaded or not, so testing doesn't
--- need leaving and re-entering the office after every reload.
-local debug_ignore_death = true
--- Where the riches stand in the world. Worked out once the ground there has loaded.
-local spot
+-- A model only loads once it's shown, and flickers while it does. So at start
+-- every model is shown out of sight for this many frames (about half a second
+-- was enough in testing) to load them before they're needed. Off screen
+-- doesn't count as shown, so they're shown 1x1 pixel in the corner instead.
+local preload_frames = 30
+local preload_frames_left = 0
+-- The riches are only drawn while the player is in Death's office, so they
+-- don't show up elsewhere in the world. Checked once per game tick.
+local in_office = false
 
 -- A model on its own always faces the camera, but an NPC whose body is
 -- replaced by the item can be rotated, through the rotation of its model slot.
@@ -71,6 +89,34 @@ local function create_models()
     end
 end
 
+local function start_preload()
+    for _, model in ipairs(tilted_models) do
+        model:SetSize(1, 1)
+        model:SetPos(0, 0)
+        -- The model isn't cut off at its size, so it's also zoomed far out to
+        -- make the hat too small to notice.
+        model.viewDistance = 100000
+        model.hidden = false
+    end
+    preload_frames_left = preload_frames
+end
+
+-- Counts down the preload, and hides the models again once it's done.
+---@return boolean preloading true while the models are still loading
+local function continue_preload()
+    if preload_frames_left == 0 then
+        return false
+    end
+    preload_frames_left = preload_frames_left - 1
+    if preload_frames_left == 0 then
+        for _, model in ipairs(tilted_models) do
+            model.hidden = true
+            model:SetSize(model_size, model_size)
+        end
+    end
+    return true
+end
+
 -- The model whose tilt is closest to how far the camera looks down on the spot.
 ---@param camera_elevation number Radians
 local function model_for(camera_elevation)
@@ -86,14 +132,15 @@ local function show(model)
 end
 
 -- Where in the world the riches at the given spot are drawn. nil while the
--- ground there hasn't loaded yet, which happens on the first frames after
--- entering the office.
+-- ground there hasn't loaded yet, which shows as a height of 0 or -1 for the
+-- first frames after entering the office. Worked out every frame, so the
+-- right height is picked up as soon as it's there.
 ---@param riches_spot RichesSpot
 ---@return Vector3?
 local function find_spot(riches_spot)
-    local position = riches_spot.tile:ToCoordFine(true).position
+    local position = tile_position(riches_spot)
     local ground_height = World.GetGroundHeight(0, position.x, position.z)
-    if ground_height == 0 then
+    if ground_height <= 0 then
         return nil
     end
     position.y = ground_height + riches_spot.height
@@ -109,15 +156,14 @@ local function is_on_screen(point)
 end
 
 local function draw()
-    if not death_is_loaded and not debug_ignore_death then
+    if continue_preload() then return end
+    if not in_office then
         show(nil)
         return
     end
-    if not spot then
-        if not World.IsAvailable() then return end
-        spot = find_spot(desk)
-        if not spot then return end
-    end
+    if not World.IsAvailable() then return end
+    local spot = find_spot(desk)
+    if not spot then return end
 
     local to_camera = Camera.GetPosition() - spot
     local on_screen = ScreenConvert.Vector3ToScreen(spot)
@@ -143,37 +189,39 @@ local function draw()
     show(model)
 end
 
-local function on_npc_added(event)
-    if event.npcEntity.displayName == "Death" then
-        death_is_loaded = true
-    end
+-- How many tiles the player is from Death's desk, ignoring height.
+---@return number
+local function tiles_from_desk()
+    local player = Player.GetEntity().coordGrid:ToCoordFine(true).position
+    local desk_position = tile_position(desk)
+    return math.sqrt((player.x - desk_position.x) ^ 2 + (player.z - desk_position.z) ^ 2) / tile_size
 end
 
-local function on_npc_removed(event)
-    if event.npcEntity.displayName == "Death" then
-        death_is_loaded = false
-    end
+local function check_office()
+    in_office = tiles_from_desk() <= office_radius
 end
 
 function deaths_riches.start()
+    if db.get_render_deaths_riches() == false then
+        return
+    end
     create_models()
+    start_preload()
     Event.Draw.Subscribe(subscription_name, draw)
-    Event.NPCEntityAdded.Subscribe(subscription_name, on_npc_added)
-    Event.NPCEntityRemoved.Subscribe(subscription_name, on_npc_removed)
+    Event.ServerLogic.Subscribe(subscription_name, check_office)
 end
 
 function deaths_riches.stop()
     Event.Draw.Unsubscribe(subscription_name)
-    Event.NPCEntityAdded.Unsubscribe(subscription_name)
-    Event.NPCEntityRemoved.Unsubscribe(subscription_name)
+    Event.ServerLogic.Unsubscribe(subscription_name)
     for _, model in ipairs(tilted_models) do
         model:Destroy()
     end
     tilted_models = {}
+    preload_frames_left = 0
     shown_model = nil
     root = nil
-    death_is_loaded = false
-    spot = nil
+    in_office = false
 end
 
 return deaths_riches
