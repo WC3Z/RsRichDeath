@@ -32,25 +32,48 @@ local function create_model()
     model:SetSize(model_size, model_size) -- a component without a size is invisible
     model:SetModel(ui.ModelType.NPC_MODEL, id.NPC.HANS) -- any NPC; the customisation replaces all of him
     model.viewDistance = 600
+    -- Hidden until draw has found the spot and moved it there.
+    model.hidden = true
     rotate(0, 0)
 end
 
--- Above Death's desk.
+-- Above Death's desk. nil while the office's ground hasn't loaded yet, which
+-- happens on the first frames after a reload, login or teleport.
+---@return Vector3?
 local function find_spot()
     local position = CoordGrid.new(0, 6, 10, 29, 38):ToCoordFine(true).position
-    position.y = World.GetGroundHeight(0, position.x, position.z) + 1200
+    local ground_height = World.GetGroundHeight(0, position.x, position.z)
+    print("riches: ground height", ground_height, "at", position.x, position.z)
+    if ground_height == 0 then
+        return nil
+    end
+    position.y = ground_height + 1200
     return position
+end
+
+-- ScreenConvert can also give a point far outside the screen instead of nil,
+-- e.g. while the camera hasn't settled after loading.
+local function is_on_screen(point)
+    return point ~= nil
+        and point.x >= 0 and point.x <= root.width
+        and point.y >= 0 and point.y <= root.height
 end
 
 local function draw()
     if not spot then
-        if not World.IsAvailable() then return end
+        if not World.IsAvailable() then
+            print("riches: waiting for world")
+            return
+        end
         spot = find_spot()
+        if not spot then return end
     end
 
     local on_screen = ScreenConvert.Vector3ToScreen(spot)
-    model.hidden = on_screen == nil
-    if not on_screen then return end
+    print("riches: on_screen", on_screen and on_screen.x, on_screen and on_screen.y,
+        "spot", spot.x, spot.y, spot.z)
+    model.hidden = not is_on_screen(on_screen)
+    if model.hidden then return end
 
     -- Centred on the spot.
     model:SetPos(math.floor(on_screen.x) - model_size // 2, math.floor(on_screen.y) - model_size // 2)
@@ -58,12 +81,18 @@ local function draw()
     -- Zooms the model out as the camera moves away, so it keeps the size it
     -- would have in the world.
     local to_camera = Camera.GetPosition() - spot
-    model.viewDistance = math.floor(to_camera.length * model_size / root.width / hat_scale)
+    -- Only set when it changes, in case setting it every frame stops the model from showing.
+    local view_distance = math.floor(to_camera.length * model_size / root.width / hat_scale)
+    if view_distance ~= model.viewDistance then
+        model.viewDistance = view_distance
+    end
+    print("riches: distance", to_camera.length, "root width", root.width, "viewDistance", model.viewDistance)
 
     -- Tilts the hat by how far the camera looks down on it. It doesn't turn as
     -- the camera goes around it (yaw 0), which a partyhat mostly hides.
     local camera_elevation = math.atan(to_camera.y, math.sqrt(to_camera.x ^ 2 + to_camera.z ^ 2))
-    rotate(0, camera_elevation)
+    -- DEBUG: off to see whether rebuilding the hat every frame stops it from showing.
+    -- rotate(0, camera_elevation)
 end
 
 function deaths_riches.start()
