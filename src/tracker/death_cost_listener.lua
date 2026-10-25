@@ -1,4 +1,5 @@
 local db = require("src/database/db")
+local content_view = require("src/interface/content_view")
 local death_cost_listener = {}
 
 local var_subscription_name = "death-cost-paid"
@@ -15,6 +16,7 @@ function death_cost_listener.start()
                 -- cost will contain "," at some point, E.G 800,000
                 local cost = tonumber((amount:gsub(",", "")))
                 db.add_death_cost(cost)
+                content_view.refresh()
             end
         end
     end)
