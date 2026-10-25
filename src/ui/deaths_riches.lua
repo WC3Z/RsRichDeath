@@ -205,6 +205,10 @@ function deaths_riches.start()
     if db.get_render_deaths_riches() == false then
         return
     end
+    -- Already started, so its models are already there.
+    if #tilted_models > 0 then
+        return
+    end
     create_models()
     start_preload()
     Event.Draw.Subscribe(subscription_name, draw)

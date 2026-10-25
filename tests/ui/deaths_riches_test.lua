@@ -229,6 +229,16 @@ function tests.zooms_out_as_the_camera_moves_away()
     assert_helpers.equal(far, math.floor(6000 * 400 / 1920 / 0.9 / 1.5))
 end
 
+function tests.starting_again_while_running_changes_nothing()
+    local game = start_in_office()
+
+    deaths_riches.start()
+    draw()
+
+    assert_helpers.equal(#game.models, 31)
+    shown_model(game)
+end
+
 function tests.stop_removes_the_models_and_stops_listening()
     local game = start_in_office()
 
