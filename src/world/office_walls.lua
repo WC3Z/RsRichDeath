@@ -10,28 +10,41 @@ local office_walls = {}
 -- 23.5 starts half a tile later than one from 23.
 office_walls.map_square = { 6, 10 }
 
+-- Thick walls grow away from this tile (see WallLine's thickness): the middle
+-- of Death's desk.
+office_walls.middle = { 30, 38 }
+
 -- A box covering whole tiles, from one corner tile to the other (both
 -- included), going up from the ground.
 ---@class WallBox
----@field from number[] { local tile x, local tile z } of one corner
----@field to number[] { local tile x, local tile z } of the opposite corner
----@field height number How high the box goes above the ground, in fine units (a tile is 512 wide)
+---@field from    number[] { local tile x, local tile z } of one corner
+---@field to      number[] { local tile x, local tile z } of the opposite corner
+---@field height  number   How high the box goes above the ground, in fine units (a tile is 512 wide)
+---@field offset? number   Moves the whole box up, or down when negative, in fine units
 
 -- To add one, stand next to the wall in game and read the tile from the
 -- "[Riches debug] standing on" print, then check the box with show below.
 ---@type WallBox[]
 office_walls.boxes = {
     -- Deaths desk
-    { from = {28, 38}, to = {32, 38.3}, height = 1130},
+    { from = { 28, 38 }, to = { 32, 38.3 }, height = 1130 }
 }
 
 -- A thin, straight wall, from the middle of one tile to the middle of another,
 -- going up from the ground. Unlike boxes, these can run diagonally, and a
 -- curved wall can be made of a few short ones.
+-- A third number in from or to is how high the wall is at that end, so the
+-- top can slope: { from = { 23, 40, 3000 }, to = { 24, 41, 2000 } }. An end
+-- without one uses height. With arch, the top curves up from the ends'
+-- heights to the arch's height in the middle, in the pointed shape of the
+-- office's windows: { from = { 23, 39, 2500 }, to = { 24, 41, 2500 }, arch = 4200 }.
 ---@class WallLine
----@field from number[] { local tile x, local tile z } where the wall starts
----@field to number[] { local tile x, local tile z } where the wall ends
----@field height number How high the wall goes above the ground, in fine units (a tile is 512 wide)
+---@field from       number[] { local tile x, local tile z, height? } where the wall starts
+---@field to         number[] { local tile x, local tile z, height? } where the wall ends
+---@field height?    number   How high the wall goes above the ground, in fine units (a tile is 512 wide), at ends without their own
+---@field arch?      number   How high the top of a pointed arch is above the ground, in the middle of the wall
+---@field offset?    number   Moves the whole wall up, or down when negative, in fine units; its heights are measured from there
+---@field thickness? number   How thick the wall is, in fine units, growing from the mapped line away from office_walls.middle (towards it when negative)
 
 -- Added the same way as boxes.
 ---@type WallLine[]
@@ -41,25 +54,21 @@ office_walls.boxes = {
 -- mirrors the west half, and the top runs through Death's door (the big
 -- statue window, tiles 28-31 at z = 44).
 office_walls.walls = {
-    -- West half
-    { from = {23, 38}, to = {23, 39}, height = 3500},
-    { from = {23, 39}, to = {23, 40}, height = 3000},
-    { from = {23, 40}, to = {24, 41}, height = 3000},
-    { from = {24, 41}, to = {26, 43}, height = 2000},
-    -- Top, through Death's door
-    { from = {26, 43}, to = {28, 44}, height = 3000},
-    { from = {28, 44}, to = {31, 44}, height = 5000},
-    { from = {31, 44}, to = {32, 44}, height = 4500},
-    { from = {32, 44}, to = {33, 43.5}, height = 3000},
-    { from = {33, 43.5}, to = {33.5, 43.5}, height = 3500},
-    { from = {33.5, 43.4}, to = {34, 43}, height = 4000},
-    -- East half, the west half mirrored
-    { from = {34, 43}, to = {35, 42}, height = 4000},
-    { from = {35, 42}, to = {35.5, 41.5}, height = 3000},
-    { from = {35.5, 41.5}, to = {36, 41}, height = 2000},
-    { from = {36, 41}, to = {37, 40}, height = 3000},
-    { from = {37, 40}, to = {37, 39}, height = 3000},
-    { from = {37, 39}, to = {37, 38}, height = 3500},
+    -- Western most window
+    { from = { 24, 41, 3000 }, to = { 23, 38, 3000 }, arch = 3600, offset = -700, thickness = 250 },
+    -- Small gap between windows
+    { from = { 24.45, 41.5 }, to = { 24, 41 }, height = 2800, offset = -700, thickness = 250 },
+    -- Second window from west
+    { from = { 27.25, 43.5, 3000 }, to = { 24.45, 41.5, 3000 }, arch = 4200, offset = -700, thickness = 250 },
+
+    -- Death's door
+    { from = { 27.25, 43.5, 2300 }, to = { 32.5, 43.5, 2700 }, arch = 5300, thickness = 250 },
+    -- Second window from the east
+    { from = { 32.5, 43.5, 2700 }, to = { 35, 41, 2700 }, arch = 4100, offset = -700, thickness = 250 },
+    -- Small gap between windows
+    { from = { 35, 41 }, to = { 35.5, 41 }, height = 2800, offset = -700, thickness = 250 },
+    -- Eastern most window
+    { from = { 35.5, 41, 3000 }, to = { 36.5, 38, 3000 }, arch = 3800, offset = -700, thickness = 250 }
 }
 
 -- Whether the boxes and walls are drawn in game as wireframes, to check they

@@ -7,6 +7,7 @@ local test_files = {
     "tests/interface/content_view_test",
     "tests/world/deaths_riches_test",
     "tests/world/line_of_sight_test",
+    "tests/world/wall_measure_test",
 }
 
 local passed, failed = 0, 0

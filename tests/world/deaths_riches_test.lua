@@ -21,6 +21,7 @@ local function install()
     deaths_riches.stop()
     office_walls.boxes = {}
     office_walls.walls = {}
+    office_walls.middle = { 30, 38 }
     office_walls.show = false
     fake_persistent_db.install()
     fake_event.install()
@@ -580,6 +581,146 @@ function tests.places_walls_between_tiles_for_fractions()
     assert_helpers.equal(corners[1].z, middle(10, 40))
     assert_helpers.equal(corners[2].x, middle(6, 30))
     assert_helpers.equal(corners[2].z, middle(10, 41) + tile_size / 4)
+end
+
+function tests.hides_riches_behind_a_wall_with_a_sloped_top()
+    local game = start_in_office()
+    -- The camera's line to the desk crosses this wall in its middle, where
+    -- its top is halfway between 4000 and 0.
+    office_walls.walls = { { from = { 28, 40, 4000 }, to = { 30, 42, 0 } } }
+    draw()
+    local low_middle = layer_at(game, desk).hidden
+
+    office_walls.walls = { { from = { 28, 40, 8000 }, to = { 30, 42, 4000 } } }
+    draw()
+    local high_middle = layer_at(game, desk).hidden
+
+    assert_helpers.equal(low_middle, false)
+    assert_helpers.equal(high_middle, true)
+end
+
+function tests.draws_a_sloped_top_from_its_ends_heights()
+    local game = start_in_office()
+    office_walls.walls = { { from = { 28, 40, 3000 }, to = { 30, 42, 1000 }, height = 9999 } }
+    office_walls.show = true
+
+    draw()
+
+    local corners = game.shapes[1].shapePositions
+    assert_helpers.equal(corners[3].y, 3328 + 1000)
+    assert_helpers.equal(corners[4].y, 3328 + 3000)
+end
+
+function tests.hides_riches_behind_the_top_of_an_arched_wall()
+    local game = start_in_office()
+    -- The camera's line to the desk crosses this wall in its middle, about
+    -- 2700 above the ground: over the ends' 1000, but under the arch's peak.
+    office_walls.walls = { { from = { 28, 40 }, to = { 30, 42 }, height = 1000 } }
+    draw()
+    local without_arch = layer_at(game, desk).hidden
+
+    office_walls.walls = { { from = { 28, 40 }, to = { 30, 42 }, height = 1000, arch = 4000 } }
+    draw()
+    local with_arch = layer_at(game, desk).hidden
+
+    assert_helpers.equal(without_arch, false)
+    assert_helpers.equal(with_arch, true)
+end
+
+function tests.draws_an_arched_top_through_its_peak()
+    local game = start_in_office()
+    office_walls.walls = { { from = { 28, 40 }, to = { 30, 42 }, height = 1000, arch = 4000 } }
+    office_walls.show = true
+
+    draw()
+
+    local corners = game.shapes[1].shapePositions
+    -- The 2 bottom corners, then 13 points along the top from end to start.
+    assert_helpers.equal(#corners, 15)
+    assert_helpers.equal(corners[3].y, 3328 + 1000)
+    assert_helpers.equal(round(corners[9].y), 3328 + 4000)
+    assert_helpers.equal(corners[15].y, 3328 + 1000)
+    -- Pointed: a quarter of the way along, it's lower than a round arch
+    -- (which would be at sqrt(0.75) of the way up), as it rises into a point.
+    local quarter_up = (corners[6].y - 3328 - 1000) / 3000
+    assert_helpers.equal(quarter_up > 0.7 and quarter_up < math.sqrt(0.75), true)
+end
+
+function tests.moves_walls_and_boxes_down_by_a_negative_offset()
+    local game = start_in_office()
+    office_walls.walls = { { from = { 28, 40 }, to = { 30, 42 }, height = 4000, offset = -500 } }
+    office_walls.boxes = { { from = { 29, 40 }, to = { 29, 41 }, height = 4000, offset = -500 } }
+    office_walls.show = true
+
+    draw()
+
+    local box = game.shapes[1].shapePositions
+    assert_helpers.equal(box[1].y, 3328 - 500)
+    assert_helpers.equal(box[7].y, 3328 - 500 + 4000)
+    local wall = game.shapes[2].shapePositions
+    assert_helpers.equal(wall[1].y, 3328 - 500)
+    assert_helpers.equal(wall[3].y, 3328 - 500 + 4000)
+end
+
+function tests.a_lowered_wall_no_longer_hides_what_its_old_top_did()
+    local game = start_in_office()
+    -- The camera's line to the desk crosses this wall about 2700 up, so it
+    -- hides the desk at 3000 high, but not once moved 500 down.
+    office_walls.walls = { { from = { 28, 40 }, to = { 30, 42 }, height = 3000 } }
+    draw()
+    local before = layer_at(game, desk).hidden
+
+    office_walls.walls = { { from = { 28, 40 }, to = { 30, 42 }, height = 3000, offset = -500 } }
+    draw()
+    local lowered = layer_at(game, desk).hidden
+
+    assert_helpers.equal(before, true)
+    assert_helpers.equal(lowered, false)
+end
+
+function tests.the_far_face_of_a_thick_wall_hides_riches_too()
+    local game = start_in_office()
+    -- The camera's line to the desk crosses the mapped line about 2700 up, so
+    -- a 2500 high thin wall doesn't hide the desk. Made thick towards the
+    -- desk, its other face is where the line has dropped lower, under 2500.
+    office_walls.walls = { { from = { 28, 40 }, to = { 30, 42 }, height = 2500 } }
+    draw()
+    local thin = layer_at(game, desk).hidden
+
+    office_walls.walls = { { from = { 28, 40 }, to = { 30, 42 }, height = 2500, thickness = -512 } }
+    draw()
+    local thick = layer_at(game, desk).hidden
+
+    assert_helpers.equal(thin, false)
+    assert_helpers.equal(thick, true)
+end
+
+function tests.thick_walls_grow_away_from_the_offices_middle()
+    local game = start_in_office()
+    -- A diagonal wall north-west of the middle (30, 38): away from the middle
+    -- is towards -x and +z.
+    office_walls.walls = { { from = { 28, 40 }, to = { 30, 42 }, height = 2500, thickness = 512 } }
+    office_walls.show = true
+
+    draw()
+
+    -- The mapped face, the far face, and the lines joining them.
+    assert_helpers.equal(#game.shapes, 3)
+    local mapped, far = game.shapes[1].shapePositions, game.shapes[2].shapePositions
+    local shift = 512 / math.sqrt(2)
+    assert_helpers.equal(round(far[1].x), round(mapped[1].x - shift))
+    assert_helpers.equal(round(far[1].z), round(mapped[1].z + shift))
+    assert_helpers.equal(#game.shapes[3].shapeLines, 8)
+end
+
+function tests.thin_walls_have_one_face()
+    local game = start_in_office()
+    office_walls.walls = { { from = { 28, 40 }, to = { 30, 42 }, height = 2500 } }
+    office_walls.show = true
+
+    draw()
+
+    assert_helpers.equal(#game.shapes, 1)
 end
 
 function tests.draws_the_walls_when_asked_to()

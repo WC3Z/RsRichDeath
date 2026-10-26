@@ -20,6 +20,7 @@ function fake_event.install()
         ChatMessage = new_event(),
         ContentLayerReady = new_event(),
         Draw = new_event(),
+        KeyDown = new_event(),
         ServerLogic = new_event(),
     }
     ChatType = { GENERAL = "GENERAL", OTHER = "OTHER" }

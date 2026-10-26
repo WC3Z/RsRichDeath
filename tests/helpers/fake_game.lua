@@ -70,6 +70,8 @@ end
 --   to_screen(point)   what ScreenConvert.Vector3ToScreen returns for a point
 --   move_player(x, z)  puts the player at the given fine coordinates
 --   shapes           the settings of every ShapeList.Draw call
+--   mouse            Mouse.GetPosition()
+--   floor_at(point)    what ScreenConvert.ScreenToCoordFine returns for a screen point
 function fake_game.install()
     local game = {
         root = { width = 1920, height = 1080 },
@@ -79,6 +81,7 @@ function fake_game.install()
         ground_height = 3328,
         to_screen = screen_point,
         shapes = {},
+        floor_at = function() return nil end,
     }
     game.camera = vector3(fake_game.desk.x, 3328 + 1150 + 3000, fake_game.desk.z + 3000)
     game.focus = vector3(fake_game.desk.x, 3328 + 1150, fake_game.desk.z)
@@ -187,7 +190,13 @@ function fake_game.install()
         Vector3ToScreen = function(point)
             return game.to_screen(point)
         end,
+        ScreenToCoordFine = function(point)
+            return game.floor_at(point)
+        end,
     }
+    Mouse = { GetPosition = function() return game.mouse end }
+    ModifierKey = { SHIFT = 1, CONTROL = 2 }
+    GameKey = { H = 53, M = 70 }
     ShapeList = {
         Draw = function(settings)
             table.insert(game.shapes, settings)

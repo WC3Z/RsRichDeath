@@ -54,18 +54,20 @@ end
 
 -- Whether the line from one point to another passes through a thin, straight
 -- wall standing between wall_start and wall_end (only their x and z are used),
--- from bottom up to top. Seen from above, the line has to cross the wall; then
--- it passes through if it's between bottom and top where it crosses. Touching
--- the wall at the line's very end (at to) doesn't count, so riches standing
--- on a wall's line aren't hidden by it.
+-- from bottom up to its top. The top doesn't have to be level: top_at gives
+-- its height at each point along the wall (0 at wall_start, 1 at wall_end).
+-- Seen from above, the line has to cross the wall; then it passes through if
+-- it's between the bottom and the top where it crosses. Touching the wall at
+-- the line's very end (at to) doesn't count, so riches standing on a wall's
+-- line aren't hidden by it.
 ---@param from Vector3
 ---@param to Vector3
 ---@param wall_start Vector3
 ---@param wall_end Vector3
 ---@param bottom number
----@param top number
+---@param top_at fun(along_wall: number): number
 ---@return boolean
-function line_of_sight.passes_through_wall(from, to, wall_start, wall_end, bottom, top)
+function line_of_sight.passes_through_wall(from, to, wall_start, wall_end, bottom, top_at)
     local line_x, line_z = to.x - from.x, to.z - from.z
     local wall_x, wall_z = wall_end.x - wall_start.x, wall_end.z - wall_start.z
     local crossing = cross_from_above(line_x, line_z, wall_x, wall_z)
@@ -83,7 +85,7 @@ function line_of_sight.passes_through_wall(from, to, wall_start, wall_end, botto
     end
 
     local height = from.y + (to.y - from.y) * along_line
-    return height >= bottom and height <= top
+    return height >= bottom and height <= top_at(along_wall)
 end
 
 return line_of_sight

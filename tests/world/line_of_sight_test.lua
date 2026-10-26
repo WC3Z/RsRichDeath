@@ -62,7 +62,7 @@ local wall_start = point(10, 0, 10)
 local wall_end = point(20, 0, 20)
 
 local function through_wall(from, to)
-    return line_of_sight.passes_through_wall(from, to, wall_start, wall_end, 0, 10)
+    return line_of_sight.passes_through_wall(from, to, wall_start, wall_end, 0, function() return 10 end)
 end
 
 function tests.a_line_across_a_diagonal_wall_passes_through_it()
@@ -92,6 +92,21 @@ end
 
 function tests.a_line_that_ends_on_a_wall_misses_it()
     assert_helpers.equal(through_wall(point(10, 5, 20), point(15, 5, 15)), false)
+end
+
+-- The same wall, but its top slopes from 10 at (10, 10) down to 0 at (20, 20).
+local function through_sloped_wall(from, to)
+    return line_of_sight.passes_through_wall(from, to, wall_start, wall_end, 0, function(along) return 10 - 10 * along end)
+end
+
+function tests.a_line_under_a_sloped_top_passes_through_it()
+    -- Crosses where the wall is a quarter along, and 7.5 high.
+    assert_helpers.equal(through_sloped_wall(point(10, 7, 15), point(15, 7, 10)), true)
+end
+
+function tests.a_line_over_a_sloped_top_misses_it()
+    -- Crosses where the wall is three quarters along, and 2.5 high.
+    assert_helpers.equal(through_sloped_wall(point(15, 3, 20), point(20, 3, 15)), false)
 end
 
 return tests

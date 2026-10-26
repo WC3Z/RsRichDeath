@@ -1,6 +1,7 @@
 local db = require("src/database/db")
 local line_of_sight = require("src/world/line_of_sight")
 local office_walls = require("src/world/office_walls")
+local wall_measure = require("src/world/wall_measure")
 
 -- Draws Death's riches: game models on a screen layer, moved every frame so
 -- they look like they stand in Death's office. Each spot's models are in a
@@ -333,11 +334,12 @@ local function wall_corners(box)
     if ground_height <= 0 then
         return nil, nil
     end
-    return Vector3.new(min_x, ground_height, min_z), Vector3.new(max_x, ground_height + box.height, max_z)
+    local bottom = ground_height + (box.offset or 0)
+    return Vector3.new(min_x, bottom, min_z), Vector3.new(max_x, bottom + box.height, max_z)
 end
 
--- Where a wall line starts and ends, on the ground, or nil while the ground
--- there hasn't loaded yet.
+-- Where a wall line starts and ends, at its bottom (the ground, moved by its
+-- offset), or nil while the ground there hasn't loaded yet.
 ---@param wall WallLine
 ---@return Vector3? wall_start
 ---@return Vector3? wall_end
@@ -347,7 +349,69 @@ local function wall_ends(wall)
     if ground_height <= 0 then
         return nil, nil
     end
-    return Vector3.new(first.x, ground_height, first.z), Vector3.new(second.x, ground_height, second.z)
+    local bottom = ground_height + (wall.offset or 0)
+    return Vector3.new(first.x, bottom, first.z), Vector3.new(second.x, bottom, second.z)
+end
+
+-- How far up its arch a pointed (gothic) arch is at a point along it, from 0
+-- at its ends to 1 in the middle. Each half is part of a circle centred on
+-- the far end, like the office's windows.
+---@param along number 0 at one end, 1 at the other
+---@return number
+local function pointed_arch(along)
+    local from_middle = math.abs(2 * along - 1)
+    return math.sqrt(4 - (1 + from_middle) ^ 2) / math.sqrt(3)
+end
+
+-- How high the top of a wall line is along it, in the world, as a function of
+-- how far along (0 at from, 1 at to): straight from one end's height to the
+-- other's, plus the arch if it has one, rising to its height in the middle.
+---@param wall WallLine
+---@param ground_height number
+---@return fun(along: number): number
+local function wall_top(wall, ground_height)
+    local start_top = ground_height + (wall.from[3] or wall.height)
+    local end_top = ground_height + (wall.to[3] or wall.height)
+    local rise = wall.arch and ground_height + wall.arch - (start_top + end_top) / 2 or 0
+    return function(along)
+        return start_top + (end_top - start_top) * along + rise * pointed_arch(along)
+    end
+end
+
+-- How many straight pieces an arched wall's top is drawn with.
+local arch_draw_pieces = 12
+
+-- The faces of a wall line, each { start, end } at its bottom: the mapped line
+-- itself and, for a thick wall, a copy moved thickness away from the office's
+-- middle (towards it when negative). Together they hide what's behind any
+-- part of the wall's thickness.
+---@param wall WallLine
+---@param wall_start Vector3
+---@param wall_end Vector3
+---@return Vector3[][]
+local function wall_faces(wall, wall_start, wall_end)
+    local faces = { { wall_start, wall_end } }
+    local along_x, along_z = wall_end.x - wall_start.x, wall_end.z - wall_start.z
+    local length = math.sqrt(along_x ^ 2 + along_z ^ 2)
+    if not wall.thickness or wall.thickness == 0 or length == 0 then
+        return faces
+    end
+
+    -- Square to the wall, seen from above, turned to point away from the middle.
+    local out_x, out_z = -along_z / length, along_x / length
+    local middle = office_tile_middle(office_walls.middle)
+    local from_middle_x = (wall_start.x + wall_end.x) / 2 - middle.x
+    local from_middle_z = (wall_start.z + wall_end.z) / 2 - middle.z
+    if out_x * from_middle_x + out_z * from_middle_z < 0 then
+        out_x, out_z = -out_x, -out_z
+    end
+
+    local shift_x, shift_z = out_x * wall.thickness, out_z * wall.thickness
+    table.insert(faces, {
+        Vector3.new(wall_start.x + shift_x, wall_start.y, wall_start.z + shift_z),
+        Vector3.new(wall_end.x + shift_x, wall_end.y, wall_end.z + shift_z),
+    })
+    return faces
 end
 
 -- Whether a wall box or line is between the camera and the spot. A box the
@@ -366,12 +430,69 @@ local function is_behind_wall(camera_position, spot)
     end
     for _, wall in ipairs(office_walls.walls) do
         local wall_start, wall_end = wall_ends(wall)
-        if wall_start and wall_end and line_of_sight.passes_through_wall(camera_position, spot,
-            wall_start, wall_end, wall_start.y, wall_start.y + wall.height) then
-            return true
+        if wall_start and wall_end then
+            local top_at = wall_top(wall, wall_start.y)
+            for _, face in ipairs(wall_faces(wall, wall_start, wall_end)) do
+                if line_of_sight.passes_through_wall(camera_position, spot, face[1], face[2], wall_start.y, top_at) then
+                    return true
+                end
+            end
         end
     end
     return false
+end
+
+-- Has the game draw one face of a wall line as a wireframe panel.
+---@param face_start Vector3
+---@param face_end Vector3
+---@param top_at fun(along: number): number
+---@param pieces integer How many straight pieces the top is drawn with
+local function draw_wall_face(face_start, face_end, top_at, pieces)
+    -- The bottom corners, then the top from the end back to the start: two
+    -- points for a straight top, more to follow an arch.
+    local positions = { face_start, face_end }
+    for piece = 0, pieces do
+        local along = 1 - piece / pieces
+        table.insert(positions, Vector3.new(face_start.x + (face_end.x - face_start.x) * along,
+            top_at(along), face_start.z + (face_end.z - face_start.z) * along))
+    end
+    local last = #positions - 1 -- 0-indexed, the top at the start
+    -- The bottom, the end's side, the top, the start's side, and a cross so
+    -- it reads as a panel.
+    local lines = { 0, 1, 1, 2 }
+    for index = 2, last - 1 do
+        table.insert(lines, index)
+        table.insert(lines, index + 1)
+    end
+    for _, index in ipairs({ last, 0, 0, 2, 1, last }) do
+        table.insert(lines, index)
+    end
+    ShapeList.Draw({
+        shapePositions = positions,
+        shapeLines = lines,
+        ignoreDepth = true,
+        colour = 0xFF8800FF,
+        lineWidth = 2,
+    })
+end
+
+-- Has the game join a thick wall's two faces at their corners, so they read
+-- as one wall.
+---@param inner Vector3[]
+---@param outer Vector3[]
+---@param top_at fun(along: number): number
+local function draw_wall_joins(inner, outer, top_at)
+    local function top(point, along) return Vector3.new(point.x, top_at(along), point.z) end
+    ShapeList.Draw({
+        shapePositions = {
+            inner[1], outer[1], inner[2], outer[2],
+            top(inner[1], 0), top(outer[1], 0), top(inner[2], 1), top(outer[2], 1),
+        },
+        shapeLines = { 0, 1, 2, 3, 4, 5, 6, 7 },
+        ignoreDepth = true,
+        colour = 0xFF8800FF,
+        lineWidth = 2,
+    })
 end
 
 -- Has the game draw each wall box and line as a wireframe, on top of everything.
@@ -397,18 +518,15 @@ local function draw_walls()
     for _, wall in ipairs(office_walls.walls) do
         local wall_start, wall_end = wall_ends(wall)
         if wall_start and wall_end then
-            local top = wall_start.y + wall.height
-            ShapeList.Draw({
-                shapePositions = {
-                    wall_start, wall_end,
-                    Vector3.new(wall_end.x, top, wall_end.z), Vector3.new(wall_start.x, top, wall_start.z),
-                },
-                -- The outline, and a cross so it reads as a panel.
-                shapeLines = { 0, 1, 1, 2, 2, 3, 3, 0, 0, 2, 1, 3 },
-                ignoreDepth = true,
-                colour = 0xFF8800FF,
-                lineWidth = 2,
-            })
+            local top_at = wall_top(wall, wall_start.y)
+            local pieces = wall.arch and arch_draw_pieces or 1
+            local faces = wall_faces(wall, wall_start, wall_end)
+            for _, face in ipairs(faces) do
+                draw_wall_face(face[1], face[2], top_at, pieces)
+            end
+            if faces[2] then
+                draw_wall_joins(faces[1], faces[2], top_at)
+            end
         end
     end
 end
@@ -554,11 +672,13 @@ function deaths_riches.start()
     create_views()
     Event.Draw.Subscribe(subscription_name, draw)
     Event.ServerLogic.Subscribe(subscription_name, check_office)
+    wall_measure.start()
 end
 
 function deaths_riches.stop()
     Event.Draw.Unsubscribe(subscription_name)
     Event.ServerLogic.Unsubscribe(subscription_name)
+    wall_measure.stop()
     for _, view in pairs(spot_views) do
         for _, model in ipairs(view.models) do
             model:Destroy()
