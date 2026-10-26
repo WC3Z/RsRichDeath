@@ -1,6 +1,7 @@
--- Fakes of the game globals that Death's riches use: Vector3, CoordGrid, the
--- model component, World, Camera, ScreenConvert and Player. Positions are in
--- fine coordinates, 512 per tile, like the game's.
+-- Fakes of the game globals that Death's riches use: Vector3, Vector4,
+-- CoordGrid, the model and model group components, World, Camera,
+-- ScreenConvert and Player. Positions are in fine coordinates, 512 per tile,
+-- like the game's.
 local fake_game = {}
 
 local tile_size = 512
@@ -38,22 +39,41 @@ fake_game.desk = office_tile(29, 38)
 fake_game.top_left_corner = office_tile(26, 42)
 
 -- Where a world point shows on screen: the desk in the middle of a
--- 1920x1080 screen, and other points 1 pixel off per 100 fine units.
+-- 1920x1080 screen, and other points 1 pixel off per 100 fine units. Height
+-- makes no difference, so the field of view can't be measured from it.
 local function screen_point(point)
     return { x = 960 + (point.x - fake_game.desk.x) / 100, y = 500 + (point.z - fake_game.desk.z) / 100 }
 end
 fake_game.screen_point = screen_point
 
+-- Copies a fake camera's settings, like AddCamera does.
+local function copy(camera)
+    local result = {}
+    for key, value in pairs(camera) do
+        result[key] = value
+    end
+    return result
+end
+
 -- Installs the fakes. The returned table controls them:
+--   root             the screen layer, with width and height
+--   groups           every model group created, in order
 --   models           every model created, in order
 --   ground_height    what World.GetGroundHeight returns
 --   camera           Camera.GetPosition()
+--   focus            Camera.GetFocusPosition()
 --   to_screen(point)   what ScreenConvert.Vector3ToScreen returns for a point
---   converted        every point given to ScreenConvert.Vector3ToScreen
 --   move_player(x, z)  puts the player at the given fine coordinates
 function fake_game.install()
-    local game = { models = {}, ground_height = 3328, to_screen = screen_point, converted = {} }
+    local game = {
+        root = { width = 1920, height = 1080 },
+        groups = {},
+        models = {},
+        ground_height = 3328,
+        to_screen = screen_point,
+    }
     game.camera = vector3(fake_game.desk.x, 3328 + 1150 + 3000, fake_game.desk.z + 3000)
+    game.focus = vector3(fake_game.desk.x, 3328 + 1150, fake_game.desk.z)
     local player = coord_grid(fake_game.desk.x, fake_game.desk.z)
 
     function game.move_player(x, z)
@@ -61,6 +81,11 @@ function fake_game.install()
     end
 
     Vector3 = { new = vector3 }
+    Vector4 = {
+        new = function(x, y, z, w)
+            return { x = x, y = y, z = z, w = w }
+        end,
+    }
     CoordGrid = {
         new = function(plane, square_x, square_z, tile_x, tile_z)
             assert(plane == 0, "only plane 0 is faked")
@@ -68,49 +93,81 @@ function fake_game.install()
                 (square_z * 64 + tile_z) * tile_size + tile_size // 2)
         end,
     }
-    -- Any id.Model name gives back the name, so a slot's item can be checked.
-    id = { Component = {}, NPC = {}, Model = setmetatable({}, { __index = function(_, name) return name end }) }
+    -- Any id.Model name gives back the name, so a model's item can be checked.
+    id = { Component = {}, Model = setmetatable({}, { __index = function(_, name) return name end }) }
 
-    -- A model remembers its size, position, viewDistance, hidden and slot rotation.
+    -- Size, position and Destroy, shared by models and model groups.
+    local function new_component(parent)
+        local component = { parent = parent, destroyed = false }
+        function component.SetSize(self, width, height) self.width, self.height = width, height end
+        function component.SetPos(self, x, y) self.x, self.y = x, y end
+        function component.Destroy(self) self.destroyed = true end
+        return component
+    end
+
+    -- A model remembers its model and its last transform.
     local function new_model(parent)
-        local model = { parent = parent, destroyed = false }
-        function model.SetSize(self, width, height) self.width, self.height = width, height end
-        function model.SetPos(self, x, y) self.x, self.y = x, y end
-        function model.SetModel() end
-        function model.Destroy(self) self.destroyed = true end
+        local model = new_component(parent)
+        function model.SetModel(self, type, model_id) self.type, self.model_id = type, model_id end
+        function model.SetTransform(self, position, rotation, scale, duration)
+            self.transform = { position = position, rotation = rotation, scale = scale, duration = duration }
+        end
         table.insert(game.models, model)
         return model
     end
 
+    local function new_camera()
+        return {
+            SetPosition = function(self, position) self.position = position end,
+            SetLookAt = function(self, target) self.lookAt = target end,
+            SetFOV = function(self, fov) self.fov = fov end,
+            SetClipPlanes = function(self, near, far) self.nearPlane, self.farPlane = near, far end,
+        }
+    end
+
+    -- A model group keeps copies of the cameras added to it, and which one is active.
+    local function new_model_group(parent)
+        local group = new_component(parent)
+        group.cameras = {}
+        group.cameras_added = 0
+        function group.AddCamera(self, camera)
+            self.cameras_added = self.cameras_added + 1
+            self.cameras[self.cameras_added] = copy(camera)
+            return self.cameras_added
+        end
+        function group.DeleteCamera(self, index) self.cameras[index] = nil end
+        function group.SwitchCamera(self, index, transition)
+            self.active_camera, self.transition = self.cameras[index], transition
+            return self.active_camera ~= nil
+        end
+        table.insert(game.groups, group)
+        return group
+    end
+
+    -- The docs call the camera ModelCamera, but the game has ModelCameraInfo.
     ui = {
         Interfaces = {
             GetComponent = function()
-                return { width = 1920, height = 1080 }
+                return game.root
             end,
         },
         Model = { new = new_model },
-        ModelType = {},
-        NPCCustomisation = {
-            new = function()
-                -- Keeps each slot's item, and the scale and rotation of the last one set.
-                return {
-                    items = {},
-                    SetModelSlot = function(self, slot, item, scale, _, rotation)
-                        self.items[slot] = item
-                        self.scale, self.rotation = scale, rotation
-                    end,
-                }
-            end,
-        },
+        ModelType = { MODEL = "MODEL" },
+        ModelGroup = { new = new_model_group },
+        ModelCameraInfo = { new = new_camera },
+        ModelCameraTransition = { NONE = "NONE" },
     }
     World = {
         IsAvailable = function() return true end,
         GetGroundHeight = function() return game.ground_height end,
     }
-    Camera = { GetPosition = function() return game.camera end }
+    Camera = {
+        IsAvailable = function() return true end,
+        GetPosition = function() return game.camera end,
+        GetFocusPosition = function() return game.focus end,
+    }
     ScreenConvert = {
         Vector3ToScreen = function(point)
-            table.insert(game.converted, point)
             return game.to_screen(point)
         end,
     }
@@ -131,11 +188,6 @@ function fake_game.visible_models(game)
         end
     end
     return visible
-end
-
--- How far a model's hat is tilted, in degrees, from its slot rotation.
-function fake_game.tilt_of(model)
-    return math.floor(-math.deg(model.npcCustomisation.rotation.y) + 0.5)
 end
 
 return fake_game
