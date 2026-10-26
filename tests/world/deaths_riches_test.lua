@@ -8,9 +8,12 @@ local fake_persistent_db = require("tests/helpers/fake_persistent_db")
 local tile_size = 512
 local view_size = 800
 
--- The spots, in the order their groups are built (one item each).
+-- The spots, in the order their groups are built. The spot beside Death comes
+-- last, with two items (the plinth and the coins on it).
 local desk = { index = 1, position = fake_game.desk, height = 1150 }
 local top_left_corner = { index = 2, position = fake_game.top_left_corner, height = 0 }
+local spot_count = 3
+local model_count = 4
 
 -- Fresh fakes, with the riches stopped from any earlier test.
 local function install()
@@ -67,17 +70,34 @@ local function view_fov(game_degrees)
     return 2 * math.deg(math.atan(math.tan(math.rad(game_degrees) / 2) * view_size / 1080))
 end
 
--- Makes ScreenConvert act like a camera looking straight ahead along -z at
--- the focus, with the given vertical field of view: a point above the focus
--- shows higher up the 1080 pixel high screen the narrower the view.
-local function project_with_fov(game, degrees)
-    local half_height = 1080 / 2
-    game.camera = Vector3.new(fake_game.desk.x, 3328 + 1150, fake_game.desk.z + 3000)
+-- Makes ScreenConvert act like the game's camera on a 1920x1080 screen,
+-- looking from game.camera at game.focus with the given vertical field of view.
+local function project_like_camera(game, degrees)
+    local scale = 540 / math.tan(math.rad(degrees) / 2)
     game.to_screen = function(point)
-        local up = point.y - game.focus.y
-        local ahead = game.camera.z - point.z
-        return { x = 960, y = half_height - up / ahead / math.tan(math.rad(degrees) / 2) * half_height }
+        local camera, focus = game.camera, game.focus
+        local forward = Vector3.new(focus.x - camera.x, focus.y - camera.y, focus.z - camera.z)
+        local length = forward.length
+        forward = Vector3.new(forward.x / length, forward.y / length, forward.z / length)
+        -- right = forward x up, and up = right x forward
+        local right = Vector3.new(-forward.z, 0, forward.x)
+        length = right.length
+        right = Vector3.new(right.x / length, 0, right.z / length)
+        local up = Vector3.new(right.y * forward.z - right.z * forward.y,
+            right.z * forward.x - right.x * forward.z, right.x * forward.y - right.y * forward.x)
+        local to_point = Vector3.new(point.x - camera.x, point.y - camera.y, point.z - camera.z)
+        local function along(axis) return to_point.x * axis.x + to_point.y * axis.y + to_point.z * axis.z end
+        local ahead = along(forward)
+        -- Whole pixels, like the game gives.
+        return { x = round(960 + along(right) / ahead * scale), y = round(540 - along(up) / ahead * scale) }
     end
+end
+
+-- The game camera looking straight ahead at the focus from the given distance
+-- (3000 if not given), with the given vertical field of view.
+local function project_with_fov(game, degrees, distance)
+    game.camera = Vector3.new(fake_game.desk.x, 3328 + 1150, fake_game.desk.z + (distance or 3000))
+    project_like_camera(game, degrees)
 end
 
 local tests = {}
@@ -98,7 +118,7 @@ function tests.builds_a_model_group_per_spot()
 
     deaths_riches.start()
 
-    assert_helpers.equal(#game.groups, 2)
+    assert_helpers.equal(#game.groups, spot_count)
     for _, group in ipairs(game.groups) do
         assert_helpers.equal(group.parent, game.root)
         assert_helpers.equal(group.width, view_size)
@@ -123,11 +143,15 @@ function tests.puts_each_spots_items_in_the_middle_of_its_group()
 
     deaths_riches.start()
 
-    assert_helpers.equal(#game.models, 2)
-    assert_helpers.equal(game.models[desk.index].model_id, "INV_PARTYHAT")
-    assert_helpers.equal(game.models[top_left_corner.index].model_id, "INV_GOLDPEICES_10000")
+    assert_helpers.equal(#game.models, model_count)
+    assert_helpers.equal(game.models[1].model_id, "INV_PARTYHAT")
+    assert_helpers.equal(game.models[2].model_id, "INV_GOLDPEICES_10000")
+    assert_helpers.equal(game.models[3].model_id, "HUMAN_FURNITURE_GOLD_PILE_PLINTH")
+    assert_helpers.equal(game.models[4].model_id, "HUMAN_FURNITURE_GOLD_PILE_COINS_HUGE")
+    -- Each spot's items are in its own group, and both of the last spot's in its group.
+    local groups = { game.groups[1], game.groups[2], game.groups[3], game.groups[3] }
     for index, model in ipairs(game.models) do
-        assert_helpers.equal(model.parent, game.groups[index])
+        assert_helpers.equal(model.parent, groups[index])
         assert_helpers.equal(model.type, "MODEL")
         assert_helpers.equal(model.width, view_size)
         assert_helpers.equal(model.transform.position.x, 0)
@@ -176,6 +200,61 @@ function tests.each_group_sees_its_riches_from_where_the_game_camera_is()
     end
 end
 
+-- Puts the game camera nearly straight above the focus (at the desk), a
+-- little towards the given side, looking down at it.
+local function look_down_from(game, side_x, side_z)
+    game.camera = Vector3.new(game.focus.x + side_x, game.focus.y + 5000, game.focus.z + side_z)
+end
+
+local function roll_at(game, spot)
+    return math.deg(camera_at(game, spot).yawPitchRoll.z)
+end
+
+function tests.does_not_roll_a_camera_that_looks_the_same_way_as_the_games()
+    local game = start_in_office()
+
+    draw()
+
+    -- The game's camera looks straight at the desk's riches.
+    assert_helpers.equal(round(roll_at(game, desk)), 0)
+end
+
+function tests.rolls_to_turn_with_the_game_camera_when_looking_down()
+    local game = start_in_office()
+
+    look_down_from(game, 0, 10)
+    draw()
+    local facing_north = roll_at(game, top_left_corner)
+    look_down_from(game, 10, 0)
+    draw()
+    local facing_west = roll_at(game, top_left_corner)
+
+    -- A quarter turn of the game's camera turns the riches about a quarter
+    -- turn too. Not exactly, since the corner is seen at an angle.
+    local turned = math.abs(facing_west - facing_north) % 360
+    assert_helpers.equal(turned > 80 and turned < 100, true)
+end
+
+function tests.items_face_the_same_way_unless_turned()
+    local game = install()
+
+    deaths_riches.start()
+
+    for _, model in ipairs(game.models) do
+        assert_helpers.equal(model.transform.rotation.x, 0)
+    end
+end
+
+function tests.measures_the_same_field_of_view_when_looking_down()
+    local game = start_in_office()
+    look_down_from(game, 0, 10)
+    project_like_camera(game, 60)
+
+    draw()
+
+    assert_helpers.equal(round(camera_at(game, desk).fov), round(view_fov(60)))
+end
+
 function tests.swaps_the_groups_camera_instead_of_adding_more()
     local game = start_in_office()
 
@@ -199,6 +278,33 @@ function tests.narrows_the_games_measured_field_of_view_to_the_group()
 
         assert_helpers.equal(round(camera_at(game, desk).fov), round(view_fov(degrees)))
     end
+end
+
+function tests.measures_the_field_of_view_with_the_camera_close()
+    local game = start_in_office()
+    project_with_fov(game, 60, 300)
+
+    draw()
+
+    assert_helpers.equal(round(camera_at(game, desk).fov), round(view_fov(60)))
+end
+
+function tests.ignores_measurements_where_the_point_beside_the_focus_is_off_screen()
+    local game = start_in_office()
+    project_with_fov(game, 45)
+    draw()
+
+    local projection = game.to_screen
+    game.to_screen = function(point)
+        local on_screen = projection(point)
+        if point.x ~= game.focus.x then
+            on_screen.x = -100
+        end
+        return on_screen
+    end
+    draw()
+
+    assert_helpers.equal(round(camera_at(game, desk).fov), round(view_fov(45)))
 end
 
 function tests.eases_into_later_field_of_view_measurements()
@@ -247,7 +353,7 @@ function tests.waits_for_the_ground_under_the_spots_to_load()
 
     game.ground_height = 3328
     draw()
-    assert_helpers.equal(#visible_groups(game), 2)
+    assert_helpers.equal(#visible_groups(game), spot_count)
 end
 
 function tests.counts_as_in_the_office_up_to_forty_tiles_from_the_desk()
@@ -256,7 +362,7 @@ function tests.counts_as_in_the_office_up_to_forty_tiles_from_the_desk()
     game.move_player(fake_game.desk.x + 40 * tile_size, fake_game.desk.z)
     tick()
     draw()
-    assert_helpers.equal(#visible_groups(game), 2)
+    assert_helpers.equal(#visible_groups(game), spot_count)
 
     game.move_player(fake_game.desk.x + 41 * tile_size, fake_game.desk.z)
     tick()
@@ -297,8 +403,8 @@ function tests.starting_again_while_running_changes_nothing()
     deaths_riches.start()
     draw()
 
-    assert_helpers.equal(#game.groups, 2)
-    assert_helpers.equal(#game.models, 2)
+    assert_helpers.equal(#game.groups, spot_count)
+    assert_helpers.equal(#game.models, model_count)
 end
 
 function tests.stop_removes_the_groups_and_models_and_stops_listening()
@@ -306,8 +412,11 @@ function tests.stop_removes_the_groups_and_models_and_stops_listening()
 
     deaths_riches.stop()
 
-    for _, component in ipairs({ game.groups[1], game.groups[2], game.models[1], game.models[2] }) do
-        assert_helpers.equal(component.destroyed, true)
+    for _, group in ipairs(game.groups) do
+        assert_helpers.equal(group.destroyed, true)
+    end
+    for _, model in ipairs(game.models) do
+        assert_helpers.equal(model.destroyed, true)
     end
     assert_helpers.equal(next(Event.Draw.subscribers), nil)
     assert_helpers.equal(next(Event.ServerLogic.subscribers), nil)
@@ -321,8 +430,8 @@ function tests.can_start_again_after_stopping()
     tick()
     draw()
 
-    assert_helpers.equal(#game.groups, 4)
-    assert_helpers.equal(#visible_groups(game), 2)
+    assert_helpers.equal(#game.groups, 2 * spot_count)
+    assert_helpers.equal(#visible_groups(game), spot_count)
 end
 
 return tests

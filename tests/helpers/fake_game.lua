@@ -121,6 +121,7 @@ function fake_game.install()
             SetPosition = function(self, position) self.position = position end,
             SetLookAt = function(self, target) self.lookAt = target end,
             SetFOV = function(self, fov) self.fov = fov end,
+            SetYawPitchRoll = function(self, rotation) self.yawPitchRoll = rotation end,
             SetClipPlanes = function(self, near, far) self.nearPlane, self.farPlane = near, far end,
         }
     end

@@ -22,17 +22,20 @@ local riches_size = 1.5
 ---@field height number How far above the ground there the riches float
 ---@field items string[] The riches' models, as names in id.Model, drawn together
 ---@field item_scale number How big the items are drawn
+---@field offset? number[] How far from the middle of the tile, as { x, z } in fine units (a tile is 512 wide)
+---@field rotation? number How far the items are turned around the vertical, in degrees
 
 ---@type RichesSpot
 local desk = { tile = { 0, 6, 10, 29, 38 }, height = 1150, items = { "INV_PARTYHAT" }, item_scale = 1 }
 -- Furniture models didn't tilt right when every model faced the camera on its
--- own. In a model group they're seen from the camera's direction, so they may
--- work now (not tried yet).
+-- own. In a model group they're seen from the camera's direction like
+-- everything else, so they should work now (not tried yet).
 ---@type RichesSpot
 local top_left_corner = { tile = { 0, 6, 10, 26, 42 }, height = 0, items = { "INV_GOLDPEICES_10000" }, item_scale = 1 }
+local beside_death = { tile = { 0, 6, 10, 32, 40 }, height = 0, items = { "HUMAN_FURNITURE_GOLD_PILE_PLINTH", "HUMAN_FURNITURE_GOLD_PILE_COINS_HUGE" }, item_scale = 1 }
 
 ---@type RichesSpot[]
-local riches_spots = { desk, top_left_corner }
+local riches_spots = { desk, top_left_corner, beside_death }
 
 -- Further than this from a spot, the camera can't be in Death's office, so its
 -- riches are hidden. The camera was about 3,000-10,000 away in the office.
@@ -49,14 +52,21 @@ local tile_size = 512
 local view_size = 800
 
 -- The game's field of view isn't in the API, so it's worked out from where the
--- game draws a point this far above the camera's focus (see measure_fov).
--- Until that has worked once, this is used. The game gives whole pixels, so
--- one measurement is a little off; a high point keeps that small, and after
--- the first one each measurement only moves the field of view this part of the
--- way, so it doesn't make the riches jitter.
+-- game draws a point beside the camera's focus (see measure_fov). The point is
+-- this part of the camera's distance to the side: far enough that whole pixels
+-- don't throw the measurement off much, and close enough to stay on screen
+-- when the camera is close (a fixed distance went off screen and shrank the
+-- riches).
+-- Until a measurement has worked, the default is used. After the first one,
+-- each measurement only moves the field of view part of the way, so it
+-- doesn't make the riches jitter.
 local default_fov = 60
-local fov_probe_height = 2000
+local fov_probe_share = 0.25
 local fov_smoothing = 0.05
+
+-- Which way a positive roll turns a group's camera isn't in the docs. If the
+-- riches turn the wrong way when looking down, try -1.
+local roll_sign = 1
 
 -- The groups' cameras only draw what's between these distances from them.
 local near_clip = 10
@@ -65,8 +75,6 @@ local far_clip = 60000
 local root
 local game_fov = default_fov
 local fov_measured = false
--- TEMPORARY: the field of view last printed, to see what the game's is.
-local printed_fov = 0
 
 -- A spot's model group, with its camera and one model per item. The group
 -- keeps a copy of a camera when it's added, so camera is changed and then
@@ -157,7 +165,8 @@ local function create_view(riches_spot)
         -- models in a group are as big as the group.
         model:SetSize(view_size, view_size)
         model:SetModel(ui.ModelType.MODEL, id.Model[item])
-        model:SetTransform(Vector3.new(0, 0, 0), Vector3.new(0, 0, 0), Vector3.new(size, size, size), 0)
+        local yaw = math.rad(riches_spot.rotation or 0)
+        model:SetTransform(Vector3.new(0, 0, 0), Vector3.new(yaw, 0, 0), Vector3.new(size, size, size), 0)
         table.insert(view.models, model)
     end
     return view
@@ -170,37 +179,45 @@ local function create_views()
     end
 end
 
--- The game's vertical field of view, in degrees, worked out from how far up
--- the screen the game draws a point just above the camera's focus: the
--- narrower the view, the further up it shows. nil when it can't be worked out.
+-- ScreenConvert can also give a point far outside the screen instead of nil,
+-- e.g. while the camera hasn't settled after loading.
+local function is_on_screen(point)
+    return point ~= nil
+        and point.x >= 0 and point.x <= root.width
+        and point.y >= 0 and point.y <= root.height
+end
+
+-- The game's vertical field of view, in degrees, worked out from how far to
+-- the side the game draws a point beside the camera's focus: the narrower the
+-- view, the further out it shows. The point is to the side, not above, as
+-- sideways is always across the screen; looking down, a point above the focus
+-- came out only a pixel or two from it, which made the riches grow. Assumes
+-- pixels are as wide as they're high. nil when it can't be worked out.
 ---@param camera_position Vector3
 ---@param focus Vector3
 ---@return number?
 local function measure_fov(camera_position, focus)
-    local above = Vector3.new(focus.x, focus.y + fov_probe_height, focus.z)
-    local focus_on_screen = ScreenConvert.Vector3ToScreen(focus)
-    local above_on_screen = ScreenConvert.Vector3ToScreen(above)
-    if not focus_on_screen or not above_on_screen then
-        return nil
-    end
-    local pixels_up = focus_on_screen.y - above_on_screen.y
-    if pixels_up <= 0 then
-        return nil
-    end
-
-    local forward = normalised(direction(camera_position, focus))
+    local to_focus = direction(camera_position, focus)
+    local distance = math.sqrt(dot(to_focus, to_focus))
+    local forward = normalised(to_focus)
     local right = forward and normalised(cross(forward, Vector3.new(0, 1, 0)))
     if not right then
         return nil
     end
-    local up = cross(right, forward)
-    local to_above = direction(camera_position, above)
-    local ahead = dot(to_above, forward)
-    if ahead <= 0 then
+
+    local sideways = distance * fov_probe_share
+    local beside = Vector3.new(focus.x + right.x * sideways, focus.y, focus.z + right.z * sideways)
+    local focus_on_screen = ScreenConvert.Vector3ToScreen(focus)
+    local beside_on_screen = ScreenConvert.Vector3ToScreen(beside)
+    if not is_on_screen(focus_on_screen) or not is_on_screen(beside_on_screen) then
+        return nil
+    end
+    local pixels_aside = math.abs(beside_on_screen.x - focus_on_screen.x)
+    if pixels_aside == 0 then
         return nil
     end
 
-    local tan_half_fov = dot(to_above, up) / ahead * (root.height / 2) / pixels_up
+    local tan_half_fov = sideways / distance * (root.height / 2) / pixels_aside
     return 2 * math.deg(math.atan(tan_half_fov))
 end
 
@@ -211,10 +228,6 @@ local function update_game_fov()
     elseif measured then
         game_fov = measured
         fov_measured = true
-    end
-    if math.abs(game_fov - printed_fov) >= 1 then
-        printed_fov = game_fov
-        print(string.format("[Riches debug] field of view %.1f", game_fov))
     end
 end
 
@@ -233,21 +246,47 @@ end
 ---@param riches_spot RichesSpot
 ---@return Vector3?
 local function find_spot(riches_spot)
-    local position = tile_position(riches_spot)
-    local ground_height = World.GetGroundHeight(0, position.x, position.z)
+    local middle = tile_position(riches_spot)
+    local offset = riches_spot.offset or { 0, 0 }
+    local x, z = middle.x + offset[1], middle.z + offset[2]
+    local ground_height = World.GetGroundHeight(0, x, z)
     if ground_height <= 0 then
         return nil
     end
-    position.y = ground_height + riches_spot.height
-    return position
+    return Vector3.new(x, ground_height + riches_spot.height, z)
 end
 
--- ScreenConvert can also give a point far outside the screen instead of nil,
--- e.g. while the camera hasn't settled after loading.
-local function is_on_screen(point)
-    return point ~= nil
-        and point.x >= 0 and point.x <= root.width
-        and point.y >= 0 and point.y <= root.height
+-- The up direction on screen of a camera looking along forward, which (like
+-- the game's camera) never rolls to the side. nil when looking straight up or
+-- down, where up isn't defined.
+---@param forward Vector3 Normalised
+---@return Vector3?
+local function screen_up(forward)
+    local right = normalised(cross(forward, Vector3.new(0, 1, 0)))
+    return right and cross(right, forward)
+end
+
+-- How far, in radians, a group's camera has to roll so that up on its screen
+-- is up on the game's screen. The group's camera looks straight at its spot,
+-- so without the roll its up comes from the direction to the spot, not from
+-- the way the game's camera faces. Looking almost straight down those are far
+-- apart, and the riches stayed put on screen while the world turned around them.
+---@param spot Vector3
+---@param camera_position Vector3
+---@param focus Vector3
+---@return number
+local function view_roll(spot, camera_position, focus)
+    local to_spot = normalised(direction(camera_position, spot))
+    local game_forward = normalised(direction(camera_position, focus))
+    local view_up = to_spot and screen_up(to_spot)
+    local game_up = game_forward and screen_up(game_forward)
+    if not view_up or not game_up then
+        return 0
+    end
+    -- The game's up, flattened onto the group's screen.
+    local along = dot(game_up, to_spot)
+    local wanted_up = Vector3.new(game_up.x - to_spot.x * along, game_up.y - to_spot.y * along, game_up.z - to_spot.z * along)
+    return math.atan(dot(cross(view_up, wanted_up), to_spot), dot(view_up, wanted_up))
 end
 
 ---@param riches_spot RichesSpot
@@ -259,7 +298,8 @@ local function draw_spot(riches_spot)
         return
     end
 
-    local from_spot_to_camera = direction(spot, Camera.GetPosition())
+    local camera_position = Camera.GetPosition()
+    local from_spot_to_camera = direction(spot, camera_position)
     local on_screen = ScreenConvert.Vector3ToScreen(spot)
     if math.sqrt(dot(from_spot_to_camera, from_spot_to_camera)) > max_camera_distance or not is_on_screen(on_screen) then
         view.group.hidden = true
@@ -269,6 +309,8 @@ local function draw_spot(riches_spot)
     view.group:SetPos(math.floor(on_screen.x) - view_size // 2, math.floor(on_screen.y) - view_size // 2)
     view.camera:SetPosition(from_spot_to_camera, 0)
     view.camera:SetLookAt(Vector3.new(0, 0, 0), 0)
+    local roll = view_roll(spot, camera_position, Camera.GetFocusPosition())
+    view.camera:SetYawPitchRoll(Vector3.new(0, 0, roll * roll_sign), 0)
     view.camera:SetFOV(view_fov(), 0)
     use_camera(view)
     view.group.hidden = false
@@ -325,7 +367,6 @@ function deaths_riches.stop()
     spot_views = {}
     game_fov = default_fov
     fov_measured = false
-    printed_fov = 0
     root = nil
     in_office = false
 end
