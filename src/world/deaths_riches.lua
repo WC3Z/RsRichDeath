@@ -30,12 +30,12 @@ local riches_size = 1.5
 ---@field visible_height? number How tall the riches are, in fine units. Used to show the part sticking up over low walls like Death's desk; without it, riches whose bottom is hidden are hidden whole.
 
 ---@type RichesSpot
-local desk = { tile = { 0, 6, 10, 29, 38 }, height = 1150, items = { "INV_PARTYHAT" }, item_scale = 1 }
+local desk = { tile = { 0, 6, 10, 29, 38 }, height = 1150, items = { "INV_PARTYHAT" }, item_scale = 1, visible_height = 100 }
 -- Furniture models didn't tilt right when every model faced the camera on its
 -- own. In a model group they're seen from the camera's direction like
 -- everything else, so they should work now (not tried yet).
 ---@type RichesSpot
-local top_left_corner = { tile = { 0, 6, 10, 26, 42 }, height = 0, items = { "INV_GOLDPEICES_10000" }, item_scale = 1 }
+local top_left_corner = { tile = { 0, 6, 10, 26, 42 }, height = 0, items = { "INV_GOLDPEICES_10000" }, item_scale = 1, visible_height = 250 }
 local beside_death = { tile = { 0, 6, 10, 32, 40 }, height = 0, items = { "HUMAN_FURNITURE_GOLD_PILE_PLINTH", "HUMAN_FURNITURE_GOLD_PILE_COINS_HUGE" }, item_scale = 1, visible_height = 1800 }
 
 ---@type RichesSpot[]
