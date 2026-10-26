@@ -4,6 +4,7 @@ local assert_helpers = require("tests/helpers/assert")
 local fake_event = require("tests/helpers/fake_event")
 local fake_game = require("tests/helpers/fake_game")
 local fake_persistent_db = require("tests/helpers/fake_persistent_db")
+local office_walls = require("src/world/office_walls")
 
 local tile_size = 512
 local view_size = 800
@@ -15,9 +16,12 @@ local top_left_corner = { index = 2, position = fake_game.top_left_corner, heigh
 local spot_count = 3
 local model_count = 4
 
--- Fresh fakes, with the riches stopped from any earlier test.
+-- Fresh fakes, with the riches stopped from any earlier test, and no walls.
 local function install()
     deaths_riches.stop()
+    office_walls.boxes = {}
+    office_walls.walls = {}
+    office_walls.show = false
     fake_persistent_db.install()
     fake_event.install()
     return fake_game.install()
@@ -395,6 +399,149 @@ function tests.hides_the_riches_when_the_camera_is_far_away()
     draw()
 
     assert_helpers.equal(#visible_groups(game), 0)
+end
+
+-- A wall two to three tiles north of the desk, as high as the camera's line
+-- to the desk's riches is there (the camera is 3000 north and 3000 up).
+local wall_north_of_desk = { from = { 29, 40 }, to = { 29, 41 }, height = 4000 }
+
+function tests.hides_riches_on_the_tile_the_player_stands_on()
+    local game = start_in_office()
+
+    game.move_player(fake_game.top_left_corner.x, fake_game.top_left_corner.z)
+    tick()
+    draw()
+
+    assert_helpers.equal(group_at(game, top_left_corner).hidden, true)
+    assert_helpers.equal(group_at(game, desk).hidden, false)
+end
+
+function tests.shows_the_riches_again_when_the_player_steps_off()
+    local game = start_in_office()
+    game.move_player(fake_game.top_left_corner.x, fake_game.top_left_corner.z)
+    tick()
+    draw()
+
+    game.move_player(fake_game.top_left_corner.x + tile_size, fake_game.top_left_corner.z)
+    tick()
+    draw()
+
+    assert_helpers.equal(group_at(game, top_left_corner).hidden, false)
+end
+
+function tests.hides_riches_behind_a_wall()
+    local game = start_in_office()
+    office_walls.boxes = { wall_north_of_desk }
+
+    draw()
+
+    assert_helpers.equal(group_at(game, desk).hidden, true)
+    assert_helpers.equal(group_at(game, top_left_corner).hidden, false)
+end
+
+function tests.shows_riches_the_camera_sees_over_a_wall()
+    local game = start_in_office()
+    office_walls.boxes = { { from = { 29, 40 }, to = { 29, 41 }, height = 1000 } }
+
+    draw()
+
+    assert_helpers.equal(group_at(game, desk).hidden, false)
+end
+
+function tests.a_wall_the_riches_stand_in_doesnt_hide_them()
+    local game = start_in_office()
+    office_walls.boxes = { { from = { 28, 37 }, to = { 30, 39 }, height = 2000 } }
+
+    draw()
+
+    assert_helpers.equal(group_at(game, desk).hidden, false)
+end
+
+function tests.ignores_walls_whose_ground_hasnt_loaded()
+    local game = start_in_office()
+    office_walls.boxes = { wall_north_of_desk }
+    draw()
+
+    -- The riches wait for their own ground too, so only the walls' ground is faked away.
+    local loaded = World.GetGroundHeight
+    World.GetGroundHeight = function(level, x, z)
+        if z > fake_game.desk.z + 512 and z < fake_game.desk.z + 4 * 512 then
+            return 0
+        end
+        return loaded(level, x, z)
+    end
+    draw()
+
+    assert_helpers.equal(group_at(game, desk).hidden, false)
+end
+
+-- A diagonal wall crossing the camera's line to the desk's riches about three
+-- tiles north of the desk, as high as that line is there.
+local diagonal_wall = { from = { 28, 40 }, to = { 30, 42 }, height = 4000 }
+
+function tests.hides_riches_behind_a_diagonal_wall()
+    local game = start_in_office()
+    office_walls.walls = { diagonal_wall }
+
+    draw()
+
+    assert_helpers.equal(group_at(game, desk).hidden, true)
+    assert_helpers.equal(group_at(game, top_left_corner).hidden, false)
+end
+
+function tests.shows_riches_the_camera_sees_over_a_diagonal_wall()
+    local game = start_in_office()
+    office_walls.walls = { { from = { 28, 40 }, to = { 30, 42 }, height = 1000 } }
+
+    draw()
+
+    assert_helpers.equal(group_at(game, desk).hidden, false)
+end
+
+function tests.draws_a_wall_as_a_panel_when_asked_to()
+    local game = start_in_office()
+    office_walls.walls = { diagonal_wall }
+    office_walls.show = true
+
+    draw()
+
+    assert_helpers.equal(#game.shapes, 1)
+    local corners = game.shapes[1].shapePositions
+    local function middle(square, tile) return (square * 64 + tile) * tile_size + tile_size // 2 end
+    assert_helpers.equal(corners[1].x, middle(6, 28))
+    assert_helpers.equal(corners[1].y, 3328)
+    assert_helpers.equal(corners[1].z, middle(10, 40))
+    assert_helpers.equal(corners[3].x, middle(6, 30))
+    assert_helpers.equal(corners[3].y, 3328 + 4000)
+    assert_helpers.equal(corners[3].z, middle(10, 42))
+end
+
+function tests.draws_the_walls_when_asked_to()
+    local game = start_in_office()
+    office_walls.boxes = { wall_north_of_desk }
+    office_walls.show = true
+
+    draw()
+
+    assert_helpers.equal(#game.shapes, 1)
+    local corners = game.shapes[1].shapePositions
+    local first_tile_start = (6 * 64 + 29) * tile_size
+    assert_helpers.equal(corners[1].x, first_tile_start)
+    assert_helpers.equal(corners[1].y, 3328)
+    assert_helpers.equal(corners[1].z, (10 * 64 + 40) * tile_size)
+    assert_helpers.equal(corners[7].x, first_tile_start + tile_size)
+    assert_helpers.equal(corners[7].y, 3328 + 4000)
+    assert_helpers.equal(corners[7].z, (10 * 64 + 42) * tile_size)
+    assert_helpers.equal(#game.shapes[1].shapeLines, 24)
+end
+
+function tests.doesnt_draw_the_walls_unless_asked_to()
+    local game = start_in_office()
+    office_walls.boxes = { wall_north_of_desk }
+
+    draw()
+
+    assert_helpers.equal(#game.shapes, 0)
 end
 
 function tests.starting_again_while_running_changes_nothing()

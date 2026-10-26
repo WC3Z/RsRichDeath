@@ -1,4 +1,6 @@
 local db = require("src/database/db")
+local line_of_sight = require("src/world/line_of_sight")
+local office_walls = require("src/world/office_walls")
 
 -- Draws Death's riches: game models on a screen layer, moved every frame so
 -- they look like they stand in Death's office. Each spot's models are in a
@@ -90,6 +92,10 @@ local spot_views = {}
 -- The riches are only drawn while the player is in Death's office, so they
 -- don't show up elsewhere in the world. Checked once per game tick.
 local in_office = false
+-- The middle of the tile the player stands on, also checked once per game
+-- tick. Riches on that tile are hidden, so they don't cover the player.
+---@type Vector3?
+local player_tile
 
 ---@param a Vector3
 ---@param b Vector3
@@ -289,11 +295,121 @@ local function view_roll(spot, camera_position, focus)
     return math.atan(dot(cross(view_up, wanted_up), to_spot), dot(view_up, wanted_up))
 end
 
+-- The middle of a tile in Death's office.
+---@param tile integer[] { local tile x, local tile z }
+---@return Vector3
+local function office_tile_middle(tile)
+    local square_x, square_z = office_walls.map_square[1], office_walls.map_square[2]
+    return CoordGrid.new(0, square_x, square_z, tile[1], tile[2]):ToCoordFine(true).position
+end
+
+-- The corners of a wall box in the world, or nil while the ground there
+-- hasn't loaded yet.
+---@param box WallBox
+---@return Vector3? min
+---@return Vector3? max
+local function wall_corners(box)
+    local first, second = office_tile_middle(box.from), office_tile_middle(box.to)
+    -- The positions are the tiles' middles, and the box covers the whole tiles.
+    local half_tile = tile_size // 2
+    local min_x, max_x = math.min(first.x, second.x) - half_tile, math.max(first.x, second.x) + half_tile
+    local min_z, max_z = math.min(first.z, second.z) - half_tile, math.max(first.z, second.z) + half_tile
+    local ground_height = World.GetGroundHeight(0, (min_x + max_x) // 2, (min_z + max_z) // 2)
+    if ground_height <= 0 then
+        return nil, nil
+    end
+    return Vector3.new(min_x, ground_height, min_z), Vector3.new(max_x, ground_height + box.height, max_z)
+end
+
+-- Where a wall line starts and ends, on the ground, or nil while the ground
+-- there hasn't loaded yet.
+---@param wall WallLine
+---@return Vector3? wall_start
+---@return Vector3? wall_end
+local function wall_ends(wall)
+    local first, second = office_tile_middle(wall.from), office_tile_middle(wall.to)
+    local ground_height = World.GetGroundHeight(0, (first.x + second.x) // 2, (first.z + second.z) // 2)
+    if ground_height <= 0 then
+        return nil, nil
+    end
+    return Vector3.new(first.x, ground_height, first.z), Vector3.new(second.x, ground_height, second.z)
+end
+
+-- Whether a wall box or line is between the camera and the spot. A box the
+-- spot is inside doesn't count, or riches standing against a wall would never
+-- show.
+---@param camera_position Vector3
+---@param spot Vector3
+---@return boolean
+local function is_behind_wall(camera_position, spot)
+    for _, box in ipairs(office_walls.boxes) do
+        local min, max = wall_corners(box)
+        if min and max and not line_of_sight.is_inside_box(spot, min, max)
+            and line_of_sight.passes_through_box(camera_position, spot, min, max) then
+            return true
+        end
+    end
+    for _, wall in ipairs(office_walls.walls) do
+        local wall_start, wall_end = wall_ends(wall)
+        if wall_start and wall_end and line_of_sight.passes_through_wall(camera_position, spot,
+            wall_start, wall_end, wall_start.y, wall_start.y + wall.height) then
+            return true
+        end
+    end
+    return false
+end
+
+-- Has the game draw each wall box and line as a wireframe, on top of everything.
+local function draw_walls()
+    for _, box in ipairs(office_walls.boxes) do
+        local min, max = wall_corners(box)
+        if min and max then
+            ShapeList.Draw({
+                shapePositions = {
+                    Vector3.new(min.x, min.y, min.z), Vector3.new(max.x, min.y, min.z),
+                    Vector3.new(max.x, min.y, max.z), Vector3.new(min.x, min.y, max.z),
+                    Vector3.new(min.x, max.y, min.z), Vector3.new(max.x, max.y, min.z),
+                    Vector3.new(max.x, max.y, max.z), Vector3.new(min.x, max.y, max.z),
+                },
+                -- The bottom square, the top square, and the four edges between them.
+                shapeLines = { 0, 1, 1, 2, 2, 3, 3, 0, 4, 5, 5, 6, 6, 7, 7, 4, 0, 4, 1, 5, 2, 6, 3, 7 },
+                ignoreDepth = true,
+                colour = 0xFF8800FF,
+                lineWidth = 2,
+            })
+        end
+    end
+    for _, wall in ipairs(office_walls.walls) do
+        local wall_start, wall_end = wall_ends(wall)
+        if wall_start and wall_end then
+            local top = wall_start.y + wall.height
+            ShapeList.Draw({
+                shapePositions = {
+                    wall_start, wall_end,
+                    Vector3.new(wall_end.x, top, wall_end.z), Vector3.new(wall_start.x, top, wall_start.z),
+                },
+                -- The outline, and a cross so it reads as a panel.
+                shapeLines = { 0, 1, 1, 2, 2, 3, 3, 0, 0, 2, 1, 3 },
+                ignoreDepth = true,
+                colour = 0xFF8800FF,
+                lineWidth = 2,
+            })
+        end
+    end
+end
+
+---@param riches_spot RichesSpot
+---@return boolean
+local function is_player_on(riches_spot)
+    local middle = tile_position(riches_spot)
+    return player_tile ~= nil and player_tile.x == middle.x and player_tile.z == middle.z
+end
+
 ---@param riches_spot RichesSpot
 local function draw_spot(riches_spot)
     local view = spot_views[riches_spot]
     local spot = find_spot(riches_spot)
-    if not spot then
+    if not spot or is_player_on(riches_spot) then
         view.group.hidden = true
         return
     end
@@ -301,7 +417,8 @@ local function draw_spot(riches_spot)
     local camera_position = Camera.GetPosition()
     local from_spot_to_camera = direction(spot, camera_position)
     local on_screen = ScreenConvert.Vector3ToScreen(spot)
-    if math.sqrt(dot(from_spot_to_camera, from_spot_to_camera)) > max_camera_distance or not is_on_screen(on_screen) then
+    if math.sqrt(dot(from_spot_to_camera, from_spot_to_camera)) > max_camera_distance or not is_on_screen(on_screen)
+        or is_behind_wall(camera_position, spot) then
         view.group.hidden = true
         return
     end
@@ -328,18 +445,36 @@ local function draw()
     for _, riches_spot in ipairs(riches_spots) do
         draw_spot(riches_spot)
     end
+    if office_walls.show then
+        draw_walls()
+    end
 end
 
--- How many tiles the player is from Death's desk, ignoring height.
+-- How many tiles a position is from Death's desk, ignoring height.
+---@param position Vector3
 ---@return number
-local function tiles_from_desk()
-    local player = Player.GetEntity().coordGrid:ToCoordFine(true).position
+local function tiles_from_desk(position)
     local desk_position = tile_position(desk)
-    return math.sqrt((player.x - desk_position.x) ^ 2 + (player.z - desk_position.z) ^ 2) / tile_size
+    return math.sqrt((position.x - desk_position.x) ^ 2 + (position.z - desk_position.z) ^ 2) / tile_size
+end
+
+-- TEMPORARY: prints the tile the player stands on whenever it changes, to
+-- find the tiles for the boxes in office_walls.
+local printed_tile
+local function print_player_tile()
+    local tile = Player.GetEntity().coordGrid
+    local text = string.format("[Riches debug] standing on %s, %s (map square %s, %s)",
+        tile.localX, tile.localZ, tile.mapSquareX, tile.mapSquareZ)
+    if text ~= printed_tile then
+        printed_tile = text
+        print(text)
+    end
 end
 
 local function check_office()
-    in_office = tiles_from_desk() <= office_radius
+    print_player_tile()
+    player_tile = Player.GetEntity().coordGrid:ToCoordFine(true).position
+    in_office = tiles_from_desk(player_tile) <= office_radius
 end
 
 function deaths_riches.start()
@@ -369,6 +504,7 @@ function deaths_riches.stop()
     fov_measured = false
     root = nil
     in_office = false
+    player_tile = nil
 end
 
 return deaths_riches

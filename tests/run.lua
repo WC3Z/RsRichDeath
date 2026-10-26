@@ -6,6 +6,7 @@ local test_files = {
     "tests/tracker/death_cost_listener_test",
     "tests/interface/content_view_test",
     "tests/world/deaths_riches_test",
+    "tests/world/line_of_sight_test",
 }
 
 local passed, failed = 0, 0

@@ -23,6 +23,10 @@ end
 -- A tile at the given fine x and z, which ToCoordFine gives back as its middle.
 local function coord_grid(x, z)
     return {
+        localX = (x // tile_size) % 64,
+        localZ = (z // tile_size) % 64,
+        mapSquareX = x // tile_size // 64,
+        mapSquareZ = z // tile_size // 64,
         ToCoordFine = function()
             return { position = vector3(x, 0, z) }
         end,
@@ -64,6 +68,7 @@ end
 --   focus            Camera.GetFocusPosition()
 --   to_screen(point)   what ScreenConvert.Vector3ToScreen returns for a point
 --   move_player(x, z)  puts the player at the given fine coordinates
+--   shapes           the settings of every ShapeList.Draw call
 function fake_game.install()
     local game = {
         root = { width = 1920, height = 1080 },
@@ -71,10 +76,12 @@ function fake_game.install()
         models = {},
         ground_height = 3328,
         to_screen = screen_point,
+        shapes = {},
     }
     game.camera = vector3(fake_game.desk.x, 3328 + 1150 + 3000, fake_game.desk.z + 3000)
     game.focus = vector3(fake_game.desk.x, 3328 + 1150, fake_game.desk.z)
-    local player = coord_grid(fake_game.desk.x, fake_game.desk.z)
+    -- Two tiles south of the desk, so not on any riches' tile.
+    local player = coord_grid(fake_game.desk.x, fake_game.desk.z - 2 * tile_size)
 
     function game.move_player(x, z)
         player = coord_grid(x, z)
@@ -170,6 +177,11 @@ function fake_game.install()
     ScreenConvert = {
         Vector3ToScreen = function(point)
             return game.to_screen(point)
+        end,
+    }
+    ShapeList = {
+        Draw = function(settings)
+            table.insert(game.shapes, settings)
         end,
     }
     Player = {
