@@ -26,6 +26,7 @@ local riches_size = 1.5
 ---@field item_scale number How big the items are drawn
 ---@field offset? number[] How far from the middle of the tile, as { x, z } in fine units (a tile is 512 wide)
 ---@field rotation? number How far the items are turned around the vertical, in degrees
+---@field visible_height? number How tall the riches are, in fine units. Used to show the part sticking up over low walls like Death's desk; without it, riches whose bottom is hidden are hidden whole.
 
 ---@type RichesSpot
 local desk = { tile = { 0, 6, 10, 29, 38 }, height = 1150, items = { "INV_PARTYHAT" }, item_scale = 1 }
@@ -34,7 +35,7 @@ local desk = { tile = { 0, 6, 10, 29, 38 }, height = 1150, items = { "INV_PARTYH
 -- everything else, so they should work now (not tried yet).
 ---@type RichesSpot
 local top_left_corner = { tile = { 0, 6, 10, 26, 42 }, height = 0, items = { "INV_GOLDPEICES_10000" }, item_scale = 1 }
-local beside_death = { tile = { 0, 6, 10, 32, 40 }, height = 0, items = { "HUMAN_FURNITURE_GOLD_PILE_PLINTH", "HUMAN_FURNITURE_GOLD_PILE_COINS_HUGE" }, item_scale = 1 }
+local beside_death = { tile = { 0, 6, 10, 32, 40 }, height = 0, items = { "HUMAN_FURNITURE_GOLD_PILE_PLINTH", "HUMAN_FURNITURE_GOLD_PILE_COINS_HUGE" }, item_scale = 1, visible_height = 1800 }
 
 ---@type RichesSpot[]
 local riches_spots = { desk, top_left_corner, beside_death }
@@ -70,6 +71,10 @@ local fov_smoothing = 0.05
 -- riches turn the wrong way when looking down, try -1.
 local roll_sign = 1
 
+-- How many times the search for where riches show over a low wall halves
+-- the gap; 8 gets within 1/256 of their visible_height.
+local seen_height_search_steps = 8
+
 -- The groups' cameras only draw what's between these distances from them.
 local near_clip = 10
 local far_clip = 60000
@@ -80,8 +85,11 @@ local fov_measured = false
 
 -- A spot's model group, with its camera and one model per item. The group
 -- keeps a copy of a camera when it's added, so camera is changed and then
--- swapped in for the group's (see use_camera).
+-- swapped in for the group's (see use_camera). The group is in a layer of its
+-- own, which cuts off the part of the riches that's behind a low wall (see
+-- draw_spot); the layer is what's moved and hidden.
 ---@class SpotView
+---@field layer table
 ---@field group table
 ---@field camera table
 ---@field camera_index integer?
@@ -158,10 +166,13 @@ end
 ---@param riches_spot RichesSpot
 ---@return SpotView
 local function create_view(riches_spot)
-    local group = ui.ModelGroup.new(root)
+    local layer = ui.Layer.new(root)
+    layer:SetSize(view_size, view_size)
+    layer.hidden = true
+    local group = ui.ModelGroup.new(layer)
+    group:SetPos(0, 0)
     group:SetSize(view_size, view_size)
-    group.hidden = true
-    local view = { group = group, camera = new_camera(), models = {} }
+    local view = { layer = layer, group = group, camera = new_camera(), models = {} }
     use_camera(view)
 
     local size = riches_spot.item_scale * riches_size
@@ -295,12 +306,16 @@ local function view_roll(spot, camera_position, focus)
     return math.atan(dot(cross(view_up, wanted_up), to_spot), dot(view_up, wanted_up))
 end
 
--- The middle of a tile in Death's office.
----@param tile integer[] { local tile x, local tile z }
+-- Where a tile in Death's office is, in fine coordinates. Whole numbers are a
+-- tile's middle; fractions go that part of a tile further, so 23.5 is the
+-- border between tiles 23 and 24.
+---@param tile number[] { local tile x, local tile z }
 ---@return Vector3
 local function office_tile_middle(tile)
     local square_x, square_z = office_walls.map_square[1], office_walls.map_square[2]
-    return CoordGrid.new(0, square_x, square_z, tile[1], tile[2]):ToCoordFine(true).position
+    local whole_x, whole_z = math.floor(tile[1]), math.floor(tile[2])
+    local middle = CoordGrid.new(0, square_x, square_z, whole_x, whole_z):ToCoordFine(true).position
+    return Vector3.new(middle.x + (tile[1] - whole_x) * tile_size, middle.y, middle.z + (tile[2] - whole_z) * tile_size)
 end
 
 -- The corners of a wall box in the world, or nil while the ground there
@@ -314,7 +329,7 @@ local function wall_corners(box)
     local half_tile = tile_size // 2
     local min_x, max_x = math.min(first.x, second.x) - half_tile, math.max(first.x, second.x) + half_tile
     local min_z, max_z = math.min(first.z, second.z) - half_tile, math.max(first.z, second.z) + half_tile
-    local ground_height = World.GetGroundHeight(0, (min_x + max_x) // 2, (min_z + max_z) // 2)
+    local ground_height = World.GetGroundHeight(0, math.floor((min_x + max_x) / 2), math.floor((min_z + max_z) / 2))
     if ground_height <= 0 then
         return nil, nil
     end
@@ -328,7 +343,7 @@ end
 ---@return Vector3? wall_end
 local function wall_ends(wall)
     local first, second = office_tile_middle(wall.from), office_tile_middle(wall.to)
-    local ground_height = World.GetGroundHeight(0, (first.x + second.x) // 2, (first.z + second.z) // 2)
+    local ground_height = World.GetGroundHeight(0, math.floor((first.x + second.x) / 2), math.floor((first.z + second.z) / 2))
     if ground_height <= 0 then
         return nil, nil
     end
@@ -405,38 +420,88 @@ local function is_player_on(riches_spot)
     return player_tile ~= nil and player_tile.x == middle.x and player_tile.z == middle.z
 end
 
+-- How far up the riches the camera starts to see them, over whatever wall is
+-- in the way: 0 when nothing is in the way, nil when they're hidden all the
+-- way up to visible_height. In between, it's found by halving the gap between
+-- a hidden and a seen height a few times.
+---@param camera_position Vector3
+---@param spot Vector3
+---@param visible_height number
+---@return number?
+local function lowest_seen_height(camera_position, spot, visible_height)
+    local function hidden_at(height)
+        return is_behind_wall(camera_position, Vector3.new(spot.x, spot.y + height, spot.z))
+    end
+    if not hidden_at(0) then
+        return 0
+    end
+    if visible_height <= 0 or hidden_at(visible_height) then
+        return nil
+    end
+    local hidden, seen = 0, visible_height
+    for _ = 1, seen_height_search_steps do
+        local middle = (hidden + seen) / 2
+        if hidden_at(middle) then
+            hidden = middle
+        else
+            seen = middle
+        end
+    end
+    return seen
+end
+
+-- How many rows of the layer, from its top, to show: down to where the
+-- riches go behind a low wall, or all of them when nothing is in the way.
+---@param spot Vector3
+---@param seen_from number lowest_seen_height
+---@param layer_top integer
+---@return integer
+local function rows_to_show(spot, seen_from, layer_top)
+    if seen_from == 0 then
+        return view_size
+    end
+    local cut = ScreenConvert.Vector3ToScreen(Vector3.new(spot.x, spot.y + seen_from, spot.z))
+    if not cut then
+        return view_size
+    end
+    return math.max(0, math.min(view_size, math.floor(cut.y) - layer_top))
+end
+
 ---@param riches_spot RichesSpot
 local function draw_spot(riches_spot)
     local view = spot_views[riches_spot]
     local spot = find_spot(riches_spot)
     if not spot or is_player_on(riches_spot) then
-        view.group.hidden = true
+        view.layer.hidden = true
         return
     end
 
     local camera_position = Camera.GetPosition()
     local from_spot_to_camera = direction(spot, camera_position)
     local on_screen = ScreenConvert.Vector3ToScreen(spot)
+    local seen_from = lowest_seen_height(camera_position, spot, riches_spot.visible_height or 0)
     if math.sqrt(dot(from_spot_to_camera, from_spot_to_camera)) > max_camera_distance or not is_on_screen(on_screen)
-        or is_behind_wall(camera_position, spot) then
-        view.group.hidden = true
+        or not seen_from then
+        view.layer.hidden = true
         return
     end
 
-    view.group:SetPos(math.floor(on_screen.x) - view_size // 2, math.floor(on_screen.y) - view_size // 2)
+    local layer_top = math.floor(on_screen.y) - view_size // 2
+    view.layer:SetPos(math.floor(on_screen.x) - view_size // 2, layer_top)
+    view.layer:SetSize(view_size, rows_to_show(spot, seen_from, layer_top))
     view.camera:SetPosition(from_spot_to_camera, 0)
     view.camera:SetLookAt(Vector3.new(0, 0, 0), 0)
     local roll = view_roll(spot, camera_position, Camera.GetFocusPosition())
     view.camera:SetYawPitchRoll(Vector3.new(0, 0, roll * roll_sign), 0)
     view.camera:SetFOV(view_fov(), 0)
     use_camera(view)
-    view.group.hidden = false
+    view.layer.hidden = false
 end
 
 local function draw()
     if not (in_office and World.IsAvailable() and Camera.IsAvailable()) then
         for _, view in pairs(spot_views) do
-            view.group.hidden = true
+            view.layer.hidden = true
         end
         return
     end
@@ -498,6 +563,7 @@ function deaths_riches.stop()
             model:Destroy()
         end
         view.group:Destroy()
+        view.layer:Destroy()
     end
     spot_views = {}
     game_fov = default_fov

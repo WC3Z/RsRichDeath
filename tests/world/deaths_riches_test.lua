@@ -53,11 +53,16 @@ local function camera_at(game, spot)
     return group_at(game, spot).active_camera
 end
 
-local function visible_groups(game)
+-- Each spot's group is in a layer of its own, which is what's moved and hidden.
+local function layer_at(game, spot)
+    return game.layers[spot.index]
+end
+
+local function visible_layers(game)
     local visible = {}
-    for _, group in ipairs(game.groups) do
-        if group.hidden == false then
-            table.insert(visible, group)
+    for _, layer in ipairs(game.layers) do
+        if layer.hidden == false then
+            table.insert(visible, layer)
         end
     end
     return visible
@@ -117,14 +122,19 @@ function tests.does_nothing_when_turned_off()
     assert_helpers.equal(next(Event.Draw.subscribers), nil)
 end
 
-function tests.builds_a_model_group_per_spot()
+function tests.builds_a_model_group_in_a_layer_per_spot()
     local game = install()
 
     deaths_riches.start()
 
     assert_helpers.equal(#game.groups, spot_count)
-    for _, group in ipairs(game.groups) do
-        assert_helpers.equal(group.parent, game.root)
+    assert_helpers.equal(#game.layers, spot_count)
+    for index, group in ipairs(game.groups) do
+        local layer = game.layers[index]
+        assert_helpers.equal(layer.parent, game.root)
+        assert_helpers.equal(group.parent, layer)
+        assert_helpers.equal(group.x, 0)
+        assert_helpers.equal(group.y, 0)
         assert_helpers.equal(group.width, view_size)
         assert_helpers.equal(group.height, view_size)
     end
@@ -171,20 +181,21 @@ function tests.shows_nothing_before_the_office_has_been_checked()
 
     draw()
 
-    assert_helpers.equal(#visible_groups(game), 0)
+    assert_helpers.equal(#visible_layers(game), 0)
 end
 
-function tests.centres_each_spots_group_on_the_spot()
+function tests.centres_each_spots_layer_on_the_spot()
     local game = start_in_office()
 
     draw()
 
     for _, spot in ipairs({ desk, top_left_corner }) do
         local on_screen = fake_game.screen_point(spot.position)
-        local group = group_at(game, spot)
-        assert_helpers.equal(group.hidden, false)
-        assert_helpers.equal(group.x, math.floor(on_screen.x) - view_size // 2)
-        assert_helpers.equal(group.y, math.floor(on_screen.y) - view_size // 2)
+        local layer = layer_at(game, spot)
+        assert_helpers.equal(layer.hidden, false)
+        assert_helpers.equal(layer.x, math.floor(on_screen.x) - view_size // 2)
+        assert_helpers.equal(layer.y, math.floor(on_screen.y) - view_size // 2)
+        assert_helpers.equal(layer.height, view_size)
     end
 end
 
@@ -349,15 +360,15 @@ function tests.waits_for_the_ground_under_the_spots_to_load()
 
     game.ground_height = 0
     draw()
-    assert_helpers.equal(#visible_groups(game), 0)
+    assert_helpers.equal(#visible_layers(game), 0)
 
     game.ground_height = -1
     draw()
-    assert_helpers.equal(#visible_groups(game), 0)
+    assert_helpers.equal(#visible_layers(game), 0)
 
     game.ground_height = 3328
     draw()
-    assert_helpers.equal(#visible_groups(game), spot_count)
+    assert_helpers.equal(#visible_layers(game), spot_count)
 end
 
 function tests.counts_as_in_the_office_up_to_forty_tiles_from_the_desk()
@@ -366,12 +377,12 @@ function tests.counts_as_in_the_office_up_to_forty_tiles_from_the_desk()
     game.move_player(fake_game.desk.x + 40 * tile_size, fake_game.desk.z)
     tick()
     draw()
-    assert_helpers.equal(#visible_groups(game), spot_count)
+    assert_helpers.equal(#visible_layers(game), spot_count)
 
     game.move_player(fake_game.desk.x + 41 * tile_size, fake_game.desk.z)
     tick()
     draw()
-    assert_helpers.equal(#visible_groups(game), 0)
+    assert_helpers.equal(#visible_layers(game), 0)
 end
 
 function tests.hides_riches_whose_spot_is_off_screen()
@@ -387,8 +398,8 @@ function tests.hides_riches_whose_spot_is_off_screen()
 
         draw()
 
-        assert_helpers.equal(group_at(game, desk).hidden, true)
-        assert_helpers.equal(group_at(game, top_left_corner).hidden, false)
+        assert_helpers.equal(layer_at(game, desk).hidden, true)
+        assert_helpers.equal(layer_at(game, top_left_corner).hidden, false)
     end
 end
 
@@ -398,7 +409,7 @@ function tests.hides_the_riches_when_the_camera_is_far_away()
 
     draw()
 
-    assert_helpers.equal(#visible_groups(game), 0)
+    assert_helpers.equal(#visible_layers(game), 0)
 end
 
 -- A wall two to three tiles north of the desk, as high as the camera's line
@@ -412,8 +423,8 @@ function tests.hides_riches_on_the_tile_the_player_stands_on()
     tick()
     draw()
 
-    assert_helpers.equal(group_at(game, top_left_corner).hidden, true)
-    assert_helpers.equal(group_at(game, desk).hidden, false)
+    assert_helpers.equal(layer_at(game, top_left_corner).hidden, true)
+    assert_helpers.equal(layer_at(game, desk).hidden, false)
 end
 
 function tests.shows_the_riches_again_when_the_player_steps_off()
@@ -426,7 +437,7 @@ function tests.shows_the_riches_again_when_the_player_steps_off()
     tick()
     draw()
 
-    assert_helpers.equal(group_at(game, top_left_corner).hidden, false)
+    assert_helpers.equal(layer_at(game, top_left_corner).hidden, false)
 end
 
 function tests.hides_riches_behind_a_wall()
@@ -435,8 +446,8 @@ function tests.hides_riches_behind_a_wall()
 
     draw()
 
-    assert_helpers.equal(group_at(game, desk).hidden, true)
-    assert_helpers.equal(group_at(game, top_left_corner).hidden, false)
+    assert_helpers.equal(layer_at(game, desk).hidden, true)
+    assert_helpers.equal(layer_at(game, top_left_corner).hidden, false)
 end
 
 function tests.shows_riches_the_camera_sees_over_a_wall()
@@ -445,7 +456,7 @@ function tests.shows_riches_the_camera_sees_over_a_wall()
 
     draw()
 
-    assert_helpers.equal(group_at(game, desk).hidden, false)
+    assert_helpers.equal(layer_at(game, desk).hidden, false)
 end
 
 function tests.a_wall_the_riches_stand_in_doesnt_hide_them()
@@ -454,7 +465,7 @@ function tests.a_wall_the_riches_stand_in_doesnt_hide_them()
 
     draw()
 
-    assert_helpers.equal(group_at(game, desk).hidden, false)
+    assert_helpers.equal(layer_at(game, desk).hidden, false)
 end
 
 function tests.ignores_walls_whose_ground_hasnt_loaded()
@@ -472,7 +483,7 @@ function tests.ignores_walls_whose_ground_hasnt_loaded()
     end
     draw()
 
-    assert_helpers.equal(group_at(game, desk).hidden, false)
+    assert_helpers.equal(layer_at(game, desk).hidden, false)
 end
 
 -- A diagonal wall crossing the camera's line to the desk's riches about three
@@ -485,8 +496,8 @@ function tests.hides_riches_behind_a_diagonal_wall()
 
     draw()
 
-    assert_helpers.equal(group_at(game, desk).hidden, true)
-    assert_helpers.equal(group_at(game, top_left_corner).hidden, false)
+    assert_helpers.equal(layer_at(game, desk).hidden, true)
+    assert_helpers.equal(layer_at(game, top_left_corner).hidden, false)
 end
 
 function tests.shows_riches_the_camera_sees_over_a_diagonal_wall()
@@ -495,7 +506,47 @@ function tests.shows_riches_the_camera_sees_over_a_diagonal_wall()
 
     draw()
 
-    assert_helpers.equal(group_at(game, desk).hidden, false)
+    assert_helpers.equal(layer_at(game, desk).hidden, false)
+end
+
+-- The hoard beside Death, which is 1800 tall. A one-tile box just in front of
+-- it on the camera's side, as high as the desk, is in the way of its bottom
+-- but not of its top.
+local beside_death = { index = 3 }
+local desk_high_box = { from = { 31, 41 }, to = { 31, 41 }, height = 1100 }
+
+function tests.cuts_off_riches_where_they_go_behind_a_low_wall()
+    local game = start_in_office()
+    project_like_camera(game, 60)
+    office_walls.boxes = { desk_high_box }
+
+    draw()
+
+    local layer = layer_at(game, beside_death)
+    assert_helpers.equal(layer.hidden, false)
+    -- The riches' bottom is in the middle of the layer, so only rows above it show.
+    assert_helpers.equal(layer.height > 0 and layer.height < view_size // 2, true)
+end
+
+function tests.hides_riches_that_are_behind_a_wall_all_the_way_up()
+    local game = start_in_office()
+    project_like_camera(game, 60)
+    office_walls.boxes = { { from = { 31, 41 }, to = { 31, 41 }, height = 4000 } }
+
+    draw()
+
+    assert_helpers.equal(layer_at(game, beside_death).hidden, true)
+end
+
+function tests.shows_riches_whole_when_nothing_is_in_the_way()
+    local game = start_in_office()
+    project_like_camera(game, 60)
+
+    draw()
+
+    local layer = layer_at(game, beside_death)
+    assert_helpers.equal(layer.hidden, false)
+    assert_helpers.equal(layer.height, view_size)
 end
 
 function tests.draws_a_wall_as_a_panel_when_asked_to()
@@ -514,6 +565,21 @@ function tests.draws_a_wall_as_a_panel_when_asked_to()
     assert_helpers.equal(corners[3].x, middle(6, 30))
     assert_helpers.equal(corners[3].y, 3328 + 4000)
     assert_helpers.equal(corners[3].z, middle(10, 42))
+end
+
+function tests.places_walls_between_tiles_for_fractions()
+    local game = start_in_office()
+    office_walls.walls = { { from = { 28.5, 40 }, to = { 30, 41.25 }, height = 4000 } }
+    office_walls.show = true
+
+    draw()
+
+    local corners = game.shapes[1].shapePositions
+    local function middle(square, tile) return (square * 64 + tile) * tile_size + tile_size // 2 end
+    assert_helpers.equal(corners[1].x, middle(6, 28) + tile_size / 2)
+    assert_helpers.equal(corners[1].z, middle(10, 40))
+    assert_helpers.equal(corners[2].x, middle(6, 30))
+    assert_helpers.equal(corners[2].z, middle(10, 41) + tile_size / 4)
 end
 
 function tests.draws_the_walls_when_asked_to()
@@ -562,6 +628,9 @@ function tests.stop_removes_the_groups_and_models_and_stops_listening()
     for _, group in ipairs(game.groups) do
         assert_helpers.equal(group.destroyed, true)
     end
+    for _, layer in ipairs(game.layers) do
+        assert_helpers.equal(layer.destroyed, true)
+    end
     for _, model in ipairs(game.models) do
         assert_helpers.equal(model.destroyed, true)
     end
@@ -578,7 +647,7 @@ function tests.can_start_again_after_stopping()
     draw()
 
     assert_helpers.equal(#game.groups, 2 * spot_count)
-    assert_helpers.equal(#visible_groups(game), spot_count)
+    assert_helpers.equal(#visible_layers(game), spot_count)
 end
 
 return tests

@@ -4,14 +4,17 @@
 -- through one of these boxes or walls.
 local office_walls = {}
 
--- Death's office is in this map square, so the boxes and walls only give local tiles.
+-- Death's office is in this map square, so the boxes and walls only give local
+-- tiles. Whole numbers are a tile's middle, and fractions go that part of a
+-- tile further: 23.5 is the border between tiles 23 and 24, and a box from
+-- 23.5 starts half a tile later than one from 23.
 office_walls.map_square = { 6, 10 }
 
 -- A box covering whole tiles, from one corner tile to the other (both
 -- included), going up from the ground.
 ---@class WallBox
----@field from integer[] { local tile x, local tile z } of one corner
----@field to integer[] { local tile x, local tile z } of the opposite corner
+---@field from number[] { local tile x, local tile z } of one corner
+---@field to number[] { local tile x, local tile z } of the opposite corner
 ---@field height number How high the box goes above the ground, in fine units (a tile is 512 wide)
 
 -- To add one, stand next to the wall in game and read the tile from the
@@ -26,8 +29,8 @@ office_walls.boxes = {
 -- going up from the ground. Unlike boxes, these can run diagonally, and a
 -- curved wall can be made of a few short ones.
 ---@class WallLine
----@field from integer[] { local tile x, local tile z } where the wall starts
----@field to integer[] { local tile x, local tile z } where the wall ends
+---@field from number[] { local tile x, local tile z } where the wall starts
+---@field to number[] { local tile x, local tile z } where the wall ends
 ---@field height number How high the wall goes above the ground, in fine units (a tile is 512 wide)
 
 -- Added the same way as boxes.
@@ -47,10 +50,14 @@ office_walls.walls = {
     { from = {26, 43}, to = {28, 44}, height = 3000},
     { from = {28, 44}, to = {31, 44}, height = 5000},
     { from = {31, 44}, to = {32, 44}, height = 4500},
-    { from = {32, 44}, to = {34, 43}, height = 3000},
+    { from = {32, 44}, to = {33, 43.5}, height = 3000},
+    { from = {33, 43.5}, to = {33.5, 43.5}, height = 3500},
+    { from = {33.5, 43.4}, to = {34, 43}, height = 4000},
     -- East half, the west half mirrored
-    { from = {34, 43}, to = {36, 41}, height = 3000},
-    { from = {36, 41}, to = {37, 40}, height = 2000},
+    { from = {34, 43}, to = {35, 42}, height = 4000},
+    { from = {35, 42}, to = {35.5, 41.5}, height = 3000},
+    { from = {35.5, 41.5}, to = {36, 41}, height = 2000},
+    { from = {36, 41}, to = {37, 40}, height = 3000},
     { from = {37, 40}, to = {37, 39}, height = 3000},
     { from = {37, 39}, to = {37, 38}, height = 3500},
 }

@@ -61,6 +61,7 @@ end
 
 -- Installs the fakes. The returned table controls them:
 --   root             the screen layer, with width and height
+--   layers           every layer created, in order
 --   groups           every model group created, in order
 --   models           every model created, in order
 --   ground_height    what World.GetGroundHeight returns
@@ -72,6 +73,7 @@ end
 function fake_game.install()
     local game = {
         root = { width = 1920, height = 1080 },
+        layers = {},
         groups = {},
         models = {},
         ground_height = 3328,
@@ -160,6 +162,13 @@ function fake_game.install()
             end,
         },
         Model = { new = new_model },
+        Layer = {
+            new = function(parent)
+                local layer = new_component(parent)
+                table.insert(game.layers, layer)
+                return layer
+            end,
+        },
         ModelType = { MODEL = "MODEL" },
         ModelGroup = { new = new_model_group },
         ModelCameraInfo = { new = new_camera },
