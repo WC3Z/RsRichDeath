@@ -1,5 +1,6 @@
 local db = require("src/database/db")
 local deaths_riches = require("src/world/deaths_riches")
+local office_walls = require("src/world/office_walls")
 local content_view = {}
 local text
 local view
@@ -89,6 +90,21 @@ function content_view.start()
                     else
                         deaths_riches.stop()
                     end
+                end
+            })
+
+        view:AddCheckboxButton({
+            {
+                text = "Show wall outlines",
+                value = "showOfficeWalls",
+                selected = db.get_show_office_walls(),
+                tooltip = "Draws the walls Death's riches hide behind, to check where they are"
+            }
+        },
+            {
+                onChange = function (_, _, _, selected)
+                    db.set_show_office_walls(selected)
+                    office_walls.show = selected
                 end
             })
     end)

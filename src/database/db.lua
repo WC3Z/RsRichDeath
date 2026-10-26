@@ -1,6 +1,7 @@
 local Db = {}
 
 local render_deaths_riches_key = "renderDeathRiches"
+local show_office_walls_key = "showOfficeWalls"
 local death_cost_key = "deathCost"
 
 -- Get whether we should render death's riches or not
@@ -18,6 +19,19 @@ end
 ---@param selected boolean
 function Db.set_render_deaths_riches(selected)
     PersistentDB:SetBool(render_deaths_riches_key, selected)
+end
+
+
+-- Get whether the walls the riches hide behind are drawn, to check where they are
+---@return boolean
+function Db.get_show_office_walls()
+    return PersistentDB:GetBool(show_office_walls_key) == true
+end
+
+-- Set whether the walls the riches hide behind are drawn
+---@param selected boolean
+function Db.set_show_office_walls(selected)
+    PersistentDB:SetBool(show_office_walls_key, selected)
 end
 
 

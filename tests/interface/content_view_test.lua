@@ -6,6 +6,7 @@ local fake_event = require("tests/helpers/fake_event")
 local fake_game = require("tests/helpers/fake_game")
 local fake_persistent_db = require("tests/helpers/fake_persistent_db")
 local fake_prettyui = require("tests/helpers/fake_prettyui")
+local office_walls = require("src/world/office_walls")
 
 -- Starts the content view on fresh fakes, with the given death cost saved.
 ---@return table created Every view the content view has made
@@ -158,6 +159,29 @@ function tests.ticking_the_checkbox_starts_the_riches()
 
     assert_helpers.equal(db.get_render_deaths_riches(), true)
     assert_helpers.equal(type(Event.Draw.subscribers["deaths-riches"]), "function")
+end
+
+function tests.the_wall_outlines_checkbox_starts_unticked()
+    local created = start()
+    open_page()
+
+    assert_helpers.equal(created[1].checkboxes.showOfficeWalls.selected, false)
+end
+
+function tests.ticking_the_wall_outlines_checkbox_shows_them_and_saves_it()
+    local created = start()
+    office_walls.show = false
+    open_page()
+
+    created[1].checkboxes.showOfficeWalls.on_change(nil, nil, nil, true)
+
+    assert_helpers.equal(office_walls.show, true)
+    assert_helpers.equal(db.get_show_office_walls(), true)
+
+    created[1].checkboxes.showOfficeWalls.on_change(nil, nil, nil, false)
+
+    assert_helpers.equal(office_walls.show, false)
+    assert_helpers.equal(db.get_show_office_walls(), false)
 end
 
 function tests.stop_removes_the_page_and_stops_listening()

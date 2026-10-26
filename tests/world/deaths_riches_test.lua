@@ -601,6 +601,18 @@ function tests.draws_the_walls_when_asked_to()
     assert_helpers.equal(#game.shapes[1].shapeLines, 24)
 end
 
+function tests.shows_the_walls_if_that_was_saved()
+    local game = install()
+    db.set_show_office_walls(true)
+    office_walls.boxes = { wall_north_of_desk }
+
+    deaths_riches.start()
+    tick()
+    draw()
+
+    assert_helpers.equal(#game.shapes, 1)
+end
+
 function tests.doesnt_draw_the_walls_unless_asked_to()
     local game = start_in_office()
     office_walls.boxes = { wall_north_of_desk }

@@ -22,7 +22,7 @@ office_walls.map_square = { 6, 10 }
 ---@type WallBox[]
 office_walls.boxes = {
     -- Deaths desk
-    { from = {28, 38}, to = {32, 38}, height = 1100},
+    { from = {28, 38}, to = {32, 38.3}, height = 1130},
 }
 
 -- A thin, straight wall, from the middle of one tile to the middle of another,
@@ -44,7 +44,7 @@ office_walls.walls = {
     -- West half
     { from = {23, 38}, to = {23, 39}, height = 3500},
     { from = {23, 39}, to = {23, 40}, height = 3000},
-    { from = {23, 40}, to = {24, 41}, height = 2000},
+    { from = {23, 40}, to = {24, 41}, height = 3000},
     { from = {24, 41}, to = {26, 43}, height = 2000},
     -- Top, through Death's door
     { from = {26, 43}, to = {28, 44}, height = 3000},
@@ -62,7 +62,8 @@ office_walls.walls = {
     { from = {37, 39}, to = {37, 38}, height = 3500},
 }
 
--- Draws the boxes and walls in game as wireframes, to check they cover the walls.
-office_walls.show = true
+-- Whether the boxes and walls are drawn in game as wireframes, to check they
+-- cover the walls. Set from the "Show wall outlines" checkbox.
+office_walls.show = false
 
 return office_walls

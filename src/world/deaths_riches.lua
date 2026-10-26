@@ -550,6 +550,7 @@ function deaths_riches.start()
     if root then
         return
     end
+    office_walls.show = db.get_show_office_walls()
     create_views()
     Event.Draw.Subscribe(subscription_name, draw)
     Event.ServerLogic.Subscribe(subscription_name, check_office)

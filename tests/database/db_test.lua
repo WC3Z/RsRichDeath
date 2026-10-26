@@ -18,6 +18,20 @@ function tests.remembers_that_deaths_riches_were_turned_off()
     assert_helpers.equal(db.get_render_deaths_riches(), false)
 end
 
+function tests.hides_the_wall_outlines_until_turned_on()
+    fake_persistent_db.install()
+
+    assert_helpers.equal(db.get_show_office_walls(), false)
+end
+
+function tests.remembers_that_the_wall_outlines_were_turned_on()
+    fake_persistent_db.install()
+
+    db.set_show_office_walls(true)
+
+    assert_helpers.equal(db.get_show_office_walls(), true)
+end
+
 function tests.death_cost_starts_at_zero()
     fake_persistent_db.install()
 
