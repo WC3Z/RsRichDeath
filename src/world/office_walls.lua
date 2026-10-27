@@ -54,8 +54,25 @@ office_walls.boxes = {
 -- mirrors the west half, and the top runs through Death's door (the big
 -- statue window, tiles 28-31 at z = 44).
 office_walls.walls = {
+
+    -- Wall from eastern window to east
+    { from = { 37, 37.8 }, to = { 43, 37.8 }, height = 2000, thickness = 500 },
+
+    -- Eastern most wall
+    { from = { 43, 38.5 }, to = { 43, 30.5 }, height = 2000, thickness = 250, offset = -100 },
+
+    -- Wall from South-eastern corner to west
+    { from = { 32.5, 31 }, to = { 43.5, 31 }, height = 2000, thickness = 250, offset = -550 },
+
+    -- Wall from South-western corner to east
+    { from = { 17, 31 }, to = { 27.5, 31 }, height = 2000, thickness = 250, offset = -550 },
+
+    -- Western most wall
+    { from = { 17, 37.5 }, to = { 17, 29.5 }, height = 2000, thickness = 250, offset = -550 },
+    -- Wall from western window to west
+    { from = { 16, 37.5 }, to = { 23.5, 37.5 }, height = 2000, thickness = 250 },
     -- Western most window
-    { from = { 24, 41, 3000 }, to = { 23, 38, 3000 }, arch = 3600, offset = -700, thickness = 250 },
+    { from = { 24, 41, 3000 }, to = { 23.5, 38, 3000 }, arch = 3600, offset = -700, thickness = 250 },
     -- Small gap between windows
     { from = { 24.45, 41.5 }, to = { 24, 41 }, height = 2800, offset = -700, thickness = 250 },
     -- Second window from west
@@ -68,7 +85,7 @@ office_walls.walls = {
     -- Small gap between windows
     { from = { 35, 41 }, to = { 35.5, 41 }, height = 2800, offset = -700, thickness = 250 },
     -- Eastern most window
-    { from = { 35.5, 41, 3000 }, to = { 36.5, 38, 3000 }, arch = 3800, offset = -700, thickness = 250 }
+    { from = { 35.5, 41, 3000 }, to = { 36.5, 37.5, 3000 }, arch = 3800, offset = -700, thickness = 250 }
 }
 
 -- Whether the boxes and walls are drawn in game as wireframes, to check they
