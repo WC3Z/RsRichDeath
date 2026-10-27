@@ -21,11 +21,10 @@ local see_through_subscription_name = "deaths-riches-see-through"
 local riches_size = 1.5
 
 -- Further than this from a spot, the camera can't be in Death's office, so its
--- riches are hidden. The camera was about 3,000-10,000 away in the office.
+-- riches are hidden.
 local max_camera_distance = 30000
 
 -- The player counts as in Death's office within this many tiles of his desk.
--- The furthest point in the office is about 28 tiles away.
 local office_radius = 40
 -- Fine coordinates per tile.
 local tile_size = 512
@@ -38,8 +37,7 @@ local view_size = 800
 -- game draws a point beside the camera's focus (see measure_fov). The point is
 -- this part of the camera's distance to the side: far enough that whole pixels
 -- don't throw the measurement off much, and close enough to stay on screen
--- when the camera is close (a fixed distance went off screen and shrank the
--- riches).
+-- when the camera is close.
 -- Until a measurement has worked, the default is used. After the first one,
 -- each measurement only moves the field of view part of the way, so it
 -- doesn't make the riches jitter.
@@ -47,18 +45,16 @@ local default_fov = 60
 local fov_probe_share = 0.25
 local fov_smoothing = 0.05
 
--- Which way a positive roll turns a group's camera isn't in the docs. If the
--- riches turn the wrong way when looking down, try -1.
+-- Which way a positive roll turns a group's camera.
 local roll_sign = 1
 
 -- EXPERIMENT: whether the occluder models (see RichesSpot's occluders) are
--- drawn. With false they get alpha 0: if the game still uses them for depth,
--- they hide the riches without a second copy of the desk showing.
+-- drawn as they are. With false, their materials are swapped for see-through
+-- ones (see make_see_through).
 local occluders_visible = false
 -- How many tiles from a spot its occluder locs are looked for.
 local occluder_search_range = 10
--- Which way round a loc's 90 degree rotation turns its model; try -1 if the
--- desk copy is turned the wrong way.
+-- Which way round a loc's 90 degree rotation turns its model.
 local occluder_yaw_sign = 1
 
 -- How far to the side of a spot a point is drawn to find which way the
@@ -227,8 +223,7 @@ end
 ---@return SpotView
 local function create_view(riches_spot)
     -- As many strips as the "Hiding detail" setting allows, up to the spot's
-    -- own. Each strip draws the riches again, which costs a lot of frame rate
-    -- (about 50-60 down to 30-35 with 8).
+    -- own. Each strip draws the riches again, which costs frame rate.
     local strip_count = math.max(1, math.min(db.get_hiding_strips(), riches_spot.strips or 1))
     local strip_width = view_size // strip_count
     local view = { strips = {} }
@@ -263,9 +258,8 @@ end
 -- The game's vertical field of view, in degrees, worked out from how far to
 -- the side the game draws a point beside the camera's focus: the narrower the
 -- view, the further out it shows. The point is to the side, not above, as
--- sideways is always across the screen; looking down, a point above the focus
--- came out only a pixel or two from it, which made the riches grow. Assumes
--- pixels are as wide as they're high. nil when it can't be worked out.
+-- sideways is always across the screen, however far the camera looks down.
+-- Assumes pixels are as wide as they're high. nil when it can't be worked out.
 ---@param camera_position Vector3
 ---@param focus Vector3
 ---@return number?
@@ -342,8 +336,7 @@ end
 -- How far, in radians, a group's camera has to roll so that up on its screen
 -- is up on the game's screen. The group's camera looks straight at its spot,
 -- so without the roll its up comes from the direction to the spot, not from
--- the way the game's camera faces. Looking almost straight down those are far
--- apart, and the riches stayed put on screen while the world turned around them.
+-- the way the game's camera faces.
 ---@param spot Vector3
 ---@param camera_position Vector3
 ---@param focus Vector3
@@ -921,8 +914,7 @@ end
 -- covers the same part of the riches however big they are on screen, and is
 -- only checked where the riches are: at both its edges and its middle, going
 -- with whichever is seen best, so a strip only disappears where all of it is
--- hidden. Fixed-size strips reached past the riches when they were small on
--- screen, and saw past walls that hid them. The outer strips reach out to the
+-- hidden. The outer strips reach out to the
 -- view's edges, in case the riches are wider than visible_width. Without a
 -- visible_width (or a sideways), the whole view is split instead.
 ---@param strip_count integer
@@ -1091,9 +1083,8 @@ local function find_loc(config_name, near)
 end
 
 -- EXPERIMENT: where a loc's model origin is: the middle of the tiles it
--- covers, on the ground there. Worked out from its tile, as loc.position is
--- somewhere else in Death's office: x matched, but z was 40 tiles north,
--- likely where the office's instance is copied from.
+-- covers, on the ground there. Worked out from its tile, as in Death's office
+-- loc.position is somewhere else (where the office's instance is copied from).
 ---@param loc LocEntity
 ---@return Vector3? nil while the ground there hasn't loaded
 local function loc_origin(loc)
@@ -1108,11 +1099,10 @@ local function loc_origin(loc)
     return Vector3.new(x, ground_height, z)
 end
 
--- EXPERIMENT: alpha, colour and rgba at 0 all left the desk copy showing, so
--- this swaps the desk's materials for a see-through one. The API can't tell
--- which materials a model uses, so these are guesses (at most 16, one per
--- rematerial slot): 65535 for faces without a material, generic wood, bone,
--- skull and candle ones, and the office's own (BSLAY_2014_...).
+-- EXPERIMENT: materials swapped for a see-through one on the occluder models.
+-- The API can't tell which materials a model uses, so it's these (at most 16,
+-- one per rematerial slot): 65535 for faces without a material, generic wood,
+-- bone, skull and candle ones, and the office's own (BSLAY_2014_...).
 local guessed_occluder_materials = {
     65535, 49, 330, 331, 332, 338, 443, 453, 985, 1616, 1639, 1659, 4954, 4962, 4963, 4964,
 }

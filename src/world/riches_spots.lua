@@ -25,19 +25,12 @@ riches_spots.spots = {
     { tile = { 0, 6, 10, 29, 38 }, height = 1150, items = { "INV_PARTYHAT" }, item_scale = 1, visible_height = 100 },
     -- Top left corner
     { tile = { 0, 6, 10, 26, 42 }, height = 0, items = { "INV_GOLDPEICES_10000" }, item_scale = 1, visible_height = 250 },
-    -- East of Death's desk. It was beside Death, behind the desk, but hiding it
-    -- well behind the desk was too hard there. Furniture models didn't tilt
-    -- right when every model faced the camera on its own; in a model group
-    -- they're seen from the camera's direction like everything else, so they
-    -- work now.
+    -- East of Death's desk
     {
         tile = { 0, 6, 10, 34, 40 }, height = 0,
         items = { "HUMAN_FURNITURE_GOLD_PILE_PLINTH", "HUMAN_FURNITURE_GOLD_PILE_COINS_HUGE" }, item_scale = 1,
         visible_height = 1800, visible_width = 900, strips = 8,
-        -- EXPERIMENT, off: hides the hoard behind a copy of Death's desk model,
-        -- edge for edge, but the copy can't be made invisible (alpha, colour
-        -- and rgba are ignored, and the material swap in deaths_riches needs
-        -- the desk's material IDs, which the API doesn't give).
+        -- EXPERIMENT, off until the desk copy can be made invisible
         --occluders = { "BSLAY_2014_DESKBASE" },
     },
 }
