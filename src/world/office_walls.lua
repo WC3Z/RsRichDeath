@@ -68,11 +68,11 @@ office_walls.walls = {
     { from = { 17, 31 }, to = { 27.5, 31 }, height = 2000, thickness = 250, offset = -550 },
 
     -- Western most wall
-    { from = { 17, 37.5 }, to = { 17, 29.5 }, height = 2000, thickness = 250, offset = -550 },
+    { from = { 17, 37.5 }, to = { 17, 30.5 }, height = 2000, thickness = 250, offset = -550 },
     -- Wall from western window to west
-    { from = { 16, 37.5 }, to = { 23.5, 37.5 }, height = 2000, thickness = 250 },
+    { from = { 17, 37.5 }, to = { 23.5, 37.5 }, height = 2000, thickness = 250 },
     -- Western most window
-    { from = { 24, 41, 3000 }, to = { 23.5, 38, 3000 }, arch = 3600, offset = -700, thickness = 250 },
+    { from = { 24, 41, 3000 }, to = { 23.5, 37.5, 3000 }, arch = 3600, offset = -700, thickness = 250 },
     -- Small gap between windows
     { from = { 24.45, 41.5 }, to = { 24, 41 }, height = 2800, offset = -700, thickness = 250 },
     -- Second window from west
