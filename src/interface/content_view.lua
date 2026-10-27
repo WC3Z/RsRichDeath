@@ -107,6 +107,21 @@ function content_view.start()
                     office_walls.show = selected
                 end
             })
+
+        view:AddCheckboxButton({
+            {
+                text = "Detailed hiding",
+                value = "detailedHiding",
+                selected = db.get_detailed_hiding(),
+                tooltip = "Hides the riches behind things more precisely, but lowers the frame rate"
+            }
+        },
+            {
+                onChange = function (_, _, _, selected)
+                    db.set_detailed_hiding(selected)
+                    deaths_riches.restart()
+                end
+            })
     end)
 end
 

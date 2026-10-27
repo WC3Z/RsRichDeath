@@ -43,6 +43,8 @@ local function install()
     office_walls.middle = { 30, 38 }
     office_walls.show = false
     fake_persistent_db.install()
+    -- Most tests are about strips, so they're on; see the detailed hiding tests.
+    db.set_detailed_hiding(true)
     fake_event.install()
     return fake_game.install()
 end
@@ -157,6 +159,30 @@ function tests.builds_a_model_group_in_a_layer_per_strip()
         assert_helpers.equal(group.width, view_size)
         assert_helpers.equal(group.height, view_size)
     end
+end
+
+function tests.draws_every_spot_in_one_piece_without_detailed_hiding()
+    local game = install()
+    db.set_detailed_hiding(false)
+
+    deaths_riches.start()
+
+    assert_helpers.equal(#game.layers, 3)
+    assert_helpers.equal(#game.groups, 3)
+    assert_helpers.equal(game.layers[3].width, view_size)
+end
+
+function tests.restart_picks_up_a_changed_setting()
+    local game = install()
+    db.set_detailed_hiding(false)
+    deaths_riches.start()
+
+    db.set_detailed_hiding(true)
+    deaths_riches.restart()
+
+    -- The first 3 layers are gone, and the new ones are in strips again.
+    assert_helpers.equal(game.layers[1].destroyed, true)
+    assert_helpers.equal(#game.layers, 3 + layer_count)
 end
 
 function tests.a_spot_in_one_strip_shows_its_whole_group()

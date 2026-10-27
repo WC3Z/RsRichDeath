@@ -33,7 +33,7 @@ riches_spots.spots = {
     {
         tile = { 0, 6, 10, 34, 40 }, height = 0,
         items = { "HUMAN_FURNITURE_GOLD_PILE_PLINTH", "HUMAN_FURNITURE_GOLD_PILE_COINS_HUGE" }, item_scale = 1,
-        visible_height = 1800, visible_width = 900, strips = 8,
+        visible_height = 1800, visible_width = 900, strips = 4,
         -- EXPERIMENT, off: hides the hoard behind a copy of Death's desk model,
         -- edge for edge, but the copy can't be made invisible (alpha, colour
         -- and rgba are ignored, and the material swap in deaths_riches needs

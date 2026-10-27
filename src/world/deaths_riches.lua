@@ -226,7 +226,9 @@ end
 ---@param riches_spot RichesSpot
 ---@return SpotView
 local function create_view(riches_spot)
-    local strip_count = riches_spot.strips or 1
+    -- Strips only with detailed hiding on, as each one draws the riches again
+    -- and they cost a lot of frame rate (about 50-60 down to 30-35 with 8).
+    local strip_count = db.get_detailed_hiding() and riches_spot.strips or 1
     local strip_width = view_size // strip_count
     local view = { strips = {} }
     for index = 0, strip_count - 1 do
@@ -1162,6 +1164,12 @@ function deaths_riches.start()
     Event.ServerLogic.Subscribe(subscription_name, check_office)
     wall_measure.start()
     Event.KeyDown.Subscribe(see_through_subscription_name, on_see_through_key)
+end
+
+-- Starts again from scratch, to pick up a changed setting like detailed hiding.
+function deaths_riches.restart()
+    deaths_riches.stop()
+    deaths_riches.start()
 end
 
 function deaths_riches.stop()

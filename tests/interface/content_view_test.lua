@@ -184,6 +184,19 @@ function tests.ticking_the_wall_outlines_checkbox_shows_them_and_saves_it()
     assert_helpers.equal(db.get_show_office_walls(), false)
 end
 
+function tests.ticking_detailed_hiding_saves_it_and_restarts_the_riches()
+    local created = start()
+    deaths_riches.start()
+    open_page()
+    local checkbox = created[1].checkboxes.detailedHiding
+    assert_helpers.equal(checkbox.selected, false)
+
+    checkbox.on_change(nil, nil, nil, true)
+
+    assert_helpers.equal(db.get_detailed_hiding(), true)
+    assert_helpers.equal(type(Event.Draw.subscribers["deaths-riches"]), "function")
+end
+
 function tests.stop_removes_the_page_and_stops_listening()
     local created = start()
     open_page()
