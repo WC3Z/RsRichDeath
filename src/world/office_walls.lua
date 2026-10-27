@@ -46,46 +46,49 @@ office_walls.boxes = {
 ---@field offset?    number   Moves the whole wall up, or down when negative, in fine units; its heights are measured from there
 ---@field thickness? number   How thick the wall is, in fine units, growing from the mapped line away from office_walls.middle (towards it when negative)
 
--- Added the same way as boxes.
----@type WallLine[]
+-- Added the same way as boxes. Each wall goes west to east (x grows), or, if
+-- it runs more north-south than east-west, north to south (z shrinks); north
+-- is +z. The direction doesn't change how a wall works, it just keeps them
+-- easy to read. tests/world/office_walls_test.lua checks it.
+--
 -- The windows curve around Death's desk from the War's Retreat door (22, 37)
 -- to the Closure's Study door (38, 37). The office is the same on both sides
 -- of x = 30 (the middle of the desk and of Death's chair), so the east half
 -- mirrors the west half, and the top runs through Death's door (the big
 -- statue window, tiles 28-31 at z = 44).
+---@type WallLine[]
 office_walls.walls = {
+    -- Outer walls
 
-    -- Wall from eastern window to east
+    -- Wall from the eastern most window to the eastern most wall (west to east)
     { from = { 37, 37.8 }, to = { 43, 37.8 }, height = 2000, thickness = 500 },
-
-    -- Eastern most wall
-    { from = { 43, 38.5 }, to = { 43, 30.5 }, height = 2000, thickness = 250, offset = -100 },
-
-    -- Wall from South-eastern corner to west
+    -- Eastern most wall (north to south)
+    { from = { 43, 37.8 }, to = { 43, 31 }, height = 2000, thickness = 250, offset = -100 },
+    -- South wall, east of the middle (west to east)
     { from = { 32.5, 31 }, to = { 43.5, 31 }, height = 2000, thickness = 250, offset = -550 },
-
-    -- Wall from South-western corner to east
+    -- South wall, west of the middle (west to east)
     { from = { 17, 31 }, to = { 27.5, 31 }, height = 2000, thickness = 250, offset = -550 },
-
-    -- Western most wall
+    -- Western most wall (north to south)
     { from = { 17, 37.5 }, to = { 17, 30.5 }, height = 2000, thickness = 250, offset = -550 },
-    -- Wall from western window to west
+    -- Wall from the western most wall to the western most window (west to east)
     { from = { 17, 37.5 }, to = { 23.5, 37.5 }, height = 2000, thickness = 250 },
-    -- Western most window
-    { from = { 24, 41, 3000 }, to = { 23.5, 37.5, 3000 }, arch = 3600, offset = -700, thickness = 250 },
-    -- Small gap between windows
-    { from = { 24.45, 41.5 }, to = { 24, 41 }, height = 2800, offset = -700, thickness = 250 },
-    -- Second window from west
-    { from = { 27.25, 43.5, 3000 }, to = { 24.45, 41.5, 3000 }, arch = 4200, offset = -700, thickness = 250 },
 
-    -- Death's door
+    -- Windows and Death's door, from west to east
+
+    -- Western most window (north to south)
+    { from = { 24, 41, 3000 }, to = { 23.5, 37.5, 3000 }, arch = 3600, offset = -700, thickness = 250 },
+    -- Small gap between windows (north to south)
+    { from = { 24.45, 41.5 }, to = { 24, 41 }, height = 2800, offset = -700, thickness = 250 },
+    -- Second window from west (west to east)
+    { from = { 24.45, 41.5, 3000 }, to = { 27.25, 43.5, 3000 }, arch = 4200, offset = -700, thickness = 250 },
+    -- Death's door (west to east)
     { from = { 27.25, 43.5, 2300 }, to = { 32.5, 43.5, 2700 }, arch = 5300, thickness = 250 },
-    -- Second window from the east
+    -- Second window from the east (west to east)
     { from = { 32.5, 43.5, 2700 }, to = { 35, 41, 2700 }, arch = 4100, offset = -700, thickness = 250 },
-    -- Small gap between windows
+    -- Small gap between windows (west to east)
     { from = { 35, 41 }, to = { 35.5, 41 }, height = 2800, offset = -700, thickness = 250 },
-    -- Eastern most window
-    { from = { 35.5, 41, 3000 }, to = { 36.5, 37.5, 3000 }, arch = 3800, offset = -700, thickness = 250 }
+    -- Eastern most window (north to south)
+    { from = { 35.5, 41, 3000 }, to = { 36.5, 37.5, 3000 }, arch = 3800, offset = -700, thickness = 250 },
 }
 
 -- Whether the boxes and walls are drawn in game as wireframes, to check they
