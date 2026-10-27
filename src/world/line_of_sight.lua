@@ -59,15 +59,18 @@ end
 -- Seen from above, the line has to cross the wall; then it passes through if
 -- it's between the bottom and the top where it crosses. Touching the wall at
 -- the line's very end (at to) doesn't count, so riches standing on a wall's
--- line aren't hidden by it.
+-- line aren't hidden by it. A wall can have openings, like doorways: is_open_at
+-- tells whether there's one at a point on the wall, and the line goes through
+-- those without passing through the wall.
 ---@param from Vector3
 ---@param to Vector3
 ---@param wall_start Vector3
 ---@param wall_end Vector3
 ---@param bottom number
 ---@param top_at fun(along_wall: number): number
+---@param is_open_at? fun(along_wall: number, height: number): boolean
 ---@return boolean
-function line_of_sight.passes_through_wall(from, to, wall_start, wall_end, bottom, top_at)
+function line_of_sight.passes_through_wall(from, to, wall_start, wall_end, bottom, top_at, is_open_at)
     local line_x, line_z = to.x - from.x, to.z - from.z
     local wall_x, wall_z = wall_end.x - wall_start.x, wall_end.z - wall_start.z
     local crossing = cross_from_above(line_x, line_z, wall_x, wall_z)
@@ -85,7 +88,10 @@ function line_of_sight.passes_through_wall(from, to, wall_start, wall_end, botto
     end
 
     local height = from.y + (to.y - from.y) * along_line
-    return height >= bottom and height <= top_at(along_wall)
+    if height < bottom or height > top_at(along_wall) then
+        return false
+    end
+    return not (is_open_at and is_open_at(along_wall, height))
 end
 
 return line_of_sight

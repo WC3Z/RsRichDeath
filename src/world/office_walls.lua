@@ -49,6 +49,19 @@ office_walls.boxes = {
 ---@field arch?      number   How high the top of a pointed arch is above the ground, in the middle of the wall
 ---@field offset?    number   Moves the whole wall up, or down when negative, in fine units; its heights are measured from there
 ---@field thickness? number   How thick the wall is, in fine units, growing from the mapped line away from office_walls.middle (towards it when negative)
+---@field openings?  WallOpening[] Holes through the wall, like doorways or the gap under a freestanding arch
+
+-- A hole through a wall line, from one side to the other (both on the floor,
+-- placed along the wall where they land), going up from the wall's bottom.
+-- Like walls, it can have a pointed arch on top: its sides go straight up to
+-- height, then curve to arch in the middle. Without arch the top is flat.
+-- Example, a doorway: { from = { 37, 32.4 }, to = { 37, 34.6 }, height = 2000, arch = 3400 }
+---@class WallOpening
+---@field from    number[] { local tile x, local tile z } of one side
+---@field to      number[] { local tile x, local tile z } of the other side
+---@field height  number   How high its sides go above the wall's bottom, in fine units
+---@field arch?   number   How high the top of its pointed arch is above the wall's bottom
+---@field bottom? number   How high above the wall's bottom it starts, like a window sill (0 if not given)
 
 -- Added the same way as boxes. Each wall goes west to east (x grows), or, if
 -- it runs more north-south than east-west, north to south (z shrinks); north

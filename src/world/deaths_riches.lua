@@ -91,8 +91,8 @@ local fov_measured = false
 ---@field camera_index integer?
 ---@field models table[]
 ---@field occluders OccluderModel[] EXPERIMENT: models of locs drawn to hide the riches behind them
----@field left integer Where the strip starts, in pixels from the view's left edge
----@field width integer In pixels
+---@field left integer Where the strip starts when it's made, in pixels from the view's left edge (see strip_layout for where it is each frame)
+---@field width integer In pixels, when it's made
 
 -- EXPERIMENT: a model of a loc (like Death's desk) drawn in a strip's group, at
 -- the loc's place in the world, so the group's own depth hides the riches
@@ -147,11 +147,25 @@ local function normalised(vector)
     return Vector3.new(vector.x / length, vector.y / length, vector.z / length)
 end
 
--- The middle of the spot's tile, in fine coordinates.
+-- The tile the spot's riches stand on. Its tile numbers can have fractions
+-- (see tile_position), so they're rounded to the tile the point is inside.
+---@param riches_spot RichesSpot
+---@return CoordGrid
+local function spot_tile(riches_spot)
+    local level, square_x, square_z, x, z = table.unpack(riches_spot.tile)
+    return CoordGrid.new(level, square_x, square_z, math.floor(x + 0.5), math.floor(z + 0.5))
+end
+
+-- Where the spot is, in fine coordinates. Whole tile numbers are a tile's
+-- middle; fractions go that part of a tile further, so 35.5 is the border
+-- between tiles 35 and 36 (like in office_walls).
 ---@param riches_spot RichesSpot
 ---@return Vector3
 local function tile_position(riches_spot)
-    return CoordGrid.new(table.unpack(riches_spot.tile)):ToCoordFine(true).position
+    local level, square_x, square_z, x, z = table.unpack(riches_spot.tile)
+    local whole_x, whole_z = math.floor(x), math.floor(z)
+    local middle = CoordGrid.new(level, square_x, square_z, whole_x, whole_z):ToCoordFine(true).position
+    return Vector3.new(middle.x + (x - whole_x) * tile_size, middle.y, middle.z + (z - whole_z) * tile_size)
 end
 
 -- Replaces the strip's group's camera with its changed copy.
@@ -301,7 +315,7 @@ local function find_spot(riches_spot)
     local middle = tile_position(riches_spot)
     local offset = riches_spot.offset or { 0, 0 }
     local x, z = middle.x + offset[1], middle.z + offset[2]
-    local ground_height = World.GetGroundHeight(0, x, z)
+    local ground_height = World.GetGroundHeight(0, math.floor(x), math.floor(z))
     if ground_height <= 0 then
         return nil
     end
@@ -448,6 +462,76 @@ local function wall_faces(wall, wall_start, wall_end)
     return faces
 end
 
+-- How far along a wall a point is, seen from above: 0 at the wall's start and
+-- 1 at its end, where the point lands when moved square onto the wall's line.
+---@param wall_start Vector3
+---@param wall_end Vector3
+---@param point Vector3
+---@return number
+local function along_wall(wall_start, wall_end, point)
+    local wall_x, wall_z = wall_end.x - wall_start.x, wall_end.z - wall_start.z
+    local length_squared = wall_x ^ 2 + wall_z ^ 2
+    if length_squared == 0 then
+        return 0
+    end
+    return ((point.x - wall_start.x) * wall_x + (point.z - wall_start.z) * wall_z) / length_squared
+end
+
+-- An opening in a wall, worked out for the world: where it is along the wall
+-- (0 at its start, 1 at its end), its bottom, and its top at each point
+-- across it (0 at one side, 1 at the other).
+---@class OpeningPlace
+---@field from number
+---@field to number
+---@field bottom number
+---@field top_at fun(across: number): number
+
+-- The openings in a wall line. Their heights are measured from the wall's
+-- bottom, like the wall's own.
+---@param wall WallLine
+---@param wall_start Vector3
+---@param wall_end Vector3
+---@return OpeningPlace[]
+local function wall_openings(wall, wall_start, wall_end)
+    local places = {}
+    for _, opening in ipairs(wall.openings or {}) do
+        local first = along_wall(wall_start, wall_end, office_tile_middle(opening.from))
+        local second = along_wall(wall_start, wall_end, office_tile_middle(opening.to))
+        local side_top = wall_start.y + opening.height
+        local peak = wall_start.y + (opening.arch or opening.height)
+        table.insert(places, {
+            from = math.min(first, second),
+            to = math.max(first, second),
+            bottom = wall_start.y + (opening.bottom or 0),
+            top_at = function(across)
+                return side_top + (peak - side_top) * pointed_arch(across)
+            end,
+        })
+    end
+    return places
+end
+
+-- Whether there's an opening at a point on the wall, for passes_through_wall.
+-- nil for a wall without openings.
+---@param places OpeningPlace[]
+---@return (fun(along: number, height: number): boolean)?
+local function opening_check(places)
+    if #places == 0 then
+        return nil
+    end
+    return function(along, height)
+        for _, place in ipairs(places) do
+            if place.to > place.from and along >= place.from and along <= place.to then
+                local across = (along - place.from) / (place.to - place.from)
+                if height >= place.bottom and height <= place.top_at(across) then
+                    return true
+                end
+            end
+        end
+        return false
+    end
+end
+
 -- Whether a wall box or line is between the camera and the spot. A box the
 -- spot is inside doesn't count, or riches standing against a wall would never
 -- show.
@@ -466,8 +550,10 @@ local function is_behind_wall(camera_position, spot)
         local wall_start, wall_end = wall_ends(wall)
         if wall_start and wall_end then
             local top_at = wall_top(wall, wall_start.y)
+            local is_open_at = opening_check(wall_openings(wall, wall_start, wall_end))
             for _, face in ipairs(wall_faces(wall, wall_start, wall_end)) do
-                if line_of_sight.passes_through_wall(camera_position, spot, face[1], face[2], wall_start.y, top_at) then
+                if line_of_sight.passes_through_wall(camera_position, spot, face[1], face[2], wall_start.y, top_at,
+                    is_open_at) then
                     return true
                 end
             end
@@ -508,6 +594,39 @@ local function draw_wall_face(face_start, face_end, top_at, pieces)
         colour = 0xFF8800FF,
         lineWidth = 2,
     })
+end
+
+-- Has the game draw the outline of each opening in a face of a wall, in its
+-- own colour so they stand out from the wall: up one side, over the top,
+-- down the other side and back along the bottom.
+---@param face_start Vector3
+---@param face_end Vector3
+---@param places OpeningPlace[]
+local function draw_wall_openings(face_start, face_end, places)
+    for _, place in ipairs(places) do
+        local function point(along, height)
+            return Vector3.new(face_start.x + (face_end.x - face_start.x) * along, height,
+                face_start.z + (face_end.z - face_start.z) * along)
+        end
+        local positions = { point(place.from, place.bottom) }
+        for piece = 0, arch_draw_pieces do
+            local across = piece / arch_draw_pieces
+            table.insert(positions, point(place.from + (place.to - place.from) * across, place.top_at(across)))
+        end
+        table.insert(positions, point(place.to, place.bottom))
+        local lines = {}
+        for index = 0, #positions - 1 do
+            table.insert(lines, index)
+            table.insert(lines, (index + 1) % #positions)
+        end
+        ShapeList.Draw({
+            shapePositions = positions,
+            shapeLines = lines,
+            ignoreDepth = true,
+            colour = 0x00FFFFFF,
+            lineWidth = 2,
+        })
+    end
 end
 
 -- Has the game join a thick wall's two faces at their corners, so they read
@@ -555,8 +674,10 @@ local function draw_walls()
             local top_at = wall_top(wall, wall_start.y)
             local pieces = wall.arch and arch_draw_pieces or 1
             local faces = wall_faces(wall, wall_start, wall_end)
+            local openings = wall_openings(wall, wall_start, wall_end)
             for _, face in ipairs(faces) do
                 draw_wall_face(face[1], face[2], top_at, pieces)
+                draw_wall_openings(face[1], face[2], openings)
             end
             if faces[2] then
                 draw_wall_joins(faces[1], faces[2], top_at)
@@ -568,7 +689,7 @@ end
 ---@param riches_spot RichesSpot
 ---@return boolean
 local function is_player_on(riches_spot)
-    local middle = tile_position(riches_spot)
+    local middle = spot_tile(riches_spot):ToCoordFine(true).position
     return player_tile ~= nil and player_tile.x == middle.x and player_tile.z == middle.z
 end
 
@@ -643,22 +764,75 @@ local function screen_sideways(spot, camera_position, on_screen)
     return across, (beside.x - on_screen.x) / sideways_probe
 end
 
--- Draws one strip: shows it down to where its own slice of the riches goes
+-- Where one strip goes this frame, in pixels from the view's left edge, and
+-- where it's checked for walls, in pixels from the riches' middle.
+---@class StripPlace
+---@field left integer
+---@field width integer
+---@field checks number[]
+
+-- How the view is split into its strips this frame. The riches' width
+-- (visible_width, as it is on screen now) is split evenly, so each strip
+-- covers the same part of the riches however big they are on screen, and is
+-- only checked where the riches are: at both its edges and its middle, going
+-- with whichever is seen best, so a strip only disappears where all of it is
+-- hidden. Fixed-size strips reached past the riches when they were small on
+-- screen, and saw past walls that hid them. The outer strips reach out to the
+-- view's edges, in case the riches are wider than visible_width. Without a
+-- visible_width (or a sideways), the whole view is split instead.
+---@param strip_count integer
+---@param riches_spot RichesSpot
+---@param pixels_per_unit number? From screen_sideways
+---@return StripPlace[]
+local function strip_layout(strip_count, riches_spot, pixels_per_unit)
+    local middle = view_size / 2
+    if strip_count == 1 then
+        return { { left = 0, width = view_size, checks = { 0 } } }
+    end
+    local half_width = middle
+    if pixels_per_unit and riches_spot.visible_width then
+        half_width = math.min(middle, riches_spot.visible_width / 2 * math.abs(pixels_per_unit))
+    end
+    local strip_width = 2 * half_width / strip_count
+    local layout = {}
+    for index = 1, strip_count do
+        local from = middle - half_width + (index - 1) * strip_width
+        local to = from + strip_width
+        local left = index == 1 and 0 or math.floor(from + 0.5)
+        local right = index == strip_count and view_size or math.floor(to + 0.5)
+        layout[index] = {
+            left = left,
+            width = math.max(1, right - left),
+            checks = { from - middle, (from + to) / 2 - middle, to - middle },
+        }
+    end
+    return layout
+end
+
+-- Draws one strip: shows it down to where its slice of the riches goes
 -- behind a low wall, or hides it if the slice is hidden all the way up.
 ---@param strip RichesStrip
 ---@param riches_spot RichesSpot
----@param column Vector3 The bottom of the riches in the middle of the strip
+---@param place StripPlace
+---@param columns Vector3[] The bottom of the riches where the strip is checked
 ---@param view_left integer
 ---@param view_top integer
 ---@return boolean shown
-local function draw_strip(strip, riches_spot, column, view_left, view_top)
-    local seen_from = lowest_seen_height(Camera.GetPosition(), column, riches_spot.visible_height or 0)
-    if not seen_from then
+local function draw_strip(strip, riches_spot, place, columns, view_left, view_top)
+    local best_column, best_seen_from
+    for _, column in ipairs(columns) do
+        local seen_from = lowest_seen_height(Camera.GetPosition(), column, riches_spot.visible_height or 0)
+        if seen_from and (not best_seen_from or seen_from < best_seen_from) then
+            best_column, best_seen_from = column, seen_from
+        end
+    end
+    if not best_seen_from then
         strip.layer.hidden = true
         return false
     end
-    strip.layer:SetPos(view_left + strip.left, view_top)
-    strip.layer:SetSize(strip.width, rows_to_show(column, seen_from, view_top))
+    strip.layer:SetPos(view_left + place.left, view_top)
+    strip.layer:SetSize(place.width, rows_to_show(best_column, best_seen_from, view_top))
+    strip.group:SetPos(-place.left, 0)
     strip.layer.hidden = false
     return true
 end
@@ -684,17 +858,22 @@ local function draw_spot(riches_spot)
     local view_top = math.floor(on_screen.y) - view_size // 2
     local roll = view_roll(spot, camera_position, Camera.GetFocusPosition())
     local across, pixels_per_unit = screen_sideways(spot, camera_position, on_screen)
-    for _, strip in ipairs(view.strips) do
-        -- The strip's middle, in pixels from the riches' middle, as a point
-        -- that far to the side in the world. Without a sideways (or with one
-        -- strip) it's the spot itself.
-        local pixels_aside = strip.left + strip.width / 2 - view_size / 2
-        local column = spot
-        if across and pixels_aside ~= 0 then
-            local units_aside = pixels_aside / pixels_per_unit
-            column = Vector3.new(spot.x + across.x * units_aside, spot.y, spot.z + across.z * units_aside)
+    local layout = strip_layout(#view.strips, riches_spot, pixels_per_unit)
+    for index, strip in ipairs(view.strips) do
+        local place = layout[index]
+        -- Each place the strip is checked, in pixels from the riches' middle,
+        -- as a point that far to the side in the world. Without a sideways
+        -- it's the spot itself.
+        local columns = {}
+        for _, pixels_aside in ipairs(place.checks) do
+            local column = spot
+            if across and pixels_aside ~= 0 then
+                local units_aside = pixels_aside / pixels_per_unit
+                column = Vector3.new(spot.x + across.x * units_aside, spot.y, spot.z + across.z * units_aside)
+            end
+            table.insert(columns, column)
         end
-        if draw_strip(strip, riches_spot, column, view_left, view_top) then
+        if draw_strip(strip, riches_spot, place, columns, view_left, view_top) then
             -- The riches are at the middle of the scene, so everything else is
             -- placed relative to them.
             for _, occluder in ipairs(strip.occluders) do
@@ -837,7 +1016,7 @@ end
 ---@return boolean found Whether all of them were found
 local function add_occluders(riches_spot)
     local view = spot_views[riches_spot]
-    local near = CoordGrid.new(table.unpack(riches_spot.tile))
+    local near = spot_tile(riches_spot)
     local found_all = true
     for _, config_name in ipairs(riches_spot.occluders or {}) do
         local loc = find_loc(config_name, near)

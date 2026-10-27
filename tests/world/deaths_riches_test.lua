@@ -485,6 +485,45 @@ function tests.shows_the_riches_again_when_the_player_steps_off()
     assert_helpers.equal(layer_at(game, top_left_corner).hidden, false)
 end
 
+-- Started with only one spot on the given tile numbers, in the office.
+local function start_with_spot_at(tile_x, tile_z)
+    local game = install()
+    riches_spots.spots = { { tile = { 0, 6, 10, tile_x, tile_z }, height = 0, items = { "INV_PARTYHAT" }, item_scale = 1 } }
+    deaths_riches.start()
+    tick()
+    return game
+end
+
+local function middle_of(square, tile) return (square * 64 + tile) * tile_size + tile_size // 2 end
+
+function tests.places_riches_part_of_the_way_to_the_next_tile_for_fractions()
+    local game = start_with_spot_at(29.5, 40.25)
+
+    draw()
+
+    local camera = game.groups[1].active_camera
+    -- The group's camera is where the game's is, seen from the riches.
+    assert_helpers.equal(game.camera.x - camera.position.x, middle_of(6, 29) + tile_size / 2)
+    assert_helpers.equal(game.camera.z - camera.position.z, middle_of(10, 40) + tile_size / 4)
+end
+
+function tests.counts_the_player_as_on_the_tile_a_fractional_spot_is_inside()
+    -- 29.5 is the border, so the riches are inside tile 30; 40.25 is in tile 40.
+    local game = start_with_spot_at(29.5, 40.25)
+    game.move_player(middle_of(6, 30), middle_of(10, 40))
+    tick()
+    draw()
+    local on_its_tile = game.layers[1].hidden
+
+    game.move_player(middle_of(6, 29), middle_of(10, 40))
+    tick()
+    draw()
+    local on_the_tile_before = game.layers[1].hidden
+
+    assert_helpers.equal(on_its_tile, true)
+    assert_helpers.equal(on_the_tile_before, false)
+end
+
 function tests.hides_riches_behind_a_wall()
     local game = start_in_office()
     office_walls.boxes = { wall_north_of_desk }
@@ -604,15 +643,58 @@ function tests.cuts_off_only_the_strips_behind_a_low_wall()
 
     local hidden = count_hoard_strips(game)
     assert_helpers.equal(hidden, 0)
-    -- The box is in front of the hoard's middle: the middle strips are cut
-    -- off a bit below where its bottom is (the middle of the layer), and the
-    -- outer strips are whole.
+    -- The box is in front of the hoard's middle. The 4th strip is behind it
+    -- all the way across, so it's cut off a bit below where the hoard's bottom
+    -- is (the middle of the layer). The 5th is only partly behind it, so it
+    -- shows whole, like the strips further out.
     local layers = hoard_layers(game)
-    for _, middle in ipairs({ 4, 5 }) do
-        assert_helpers.equal(layers[middle].height > 0 and layers[middle].height < view_size * 0.6, true)
+    assert_helpers.equal(layers[4].height > 0 and layers[4].height < view_size * 0.6, true)
+    for _, other in ipairs({ 1, 2, 3, 5, 6, 7, 8 }) do
+        assert_helpers.equal(layers[other].height, view_size)
     end
-    for _, outer in ipairs({ 1, 2, 7, 8 }) do
-        assert_helpers.equal(layers[outer].height, view_size)
+end
+
+-- Started with only a hoard 300 wide and high in 4 strips, in the office,
+-- seen through a camera like the game's.
+local function start_with_narrow_hoard()
+    local game = install()
+    riches_spots.spots = { {
+        tile = { 0, 6, 10, 32, 40 }, height = 0, items = { "HUMAN_FURNITURE_GOLD_PILE_COINS_HUGE" }, item_scale = 1,
+        visible_height = 300, visible_width = 300, strips = 4,
+    } }
+    deaths_riches.start()
+    tick()
+    project_like_camera(game, 60)
+    return game
+end
+
+function tests.splits_the_riches_width_into_the_strips()
+    local game = start_with_narrow_hoard()
+
+    draw()
+
+    local layers = game.layers
+    -- The outer strips reach out to the view's edges, and the two in the
+    -- middle are each a quarter of the riches' width on screen, side by side.
+    assert_helpers.equal(layers[2].x, layers[1].x + layers[1].width)
+    assert_helpers.equal(layers[3].x, layers[2].x + layers[2].width)
+    assert_helpers.equal(layers[4].x + layers[4].width, layers[1].x + view_size)
+    assert_helpers.equal(layers[2].width < view_size // 4, true)
+    assert_helpers.equal(math.abs(layers[2].width - layers[3].width) <= 1, true)
+    -- Each group is moved left inside its layer by where the layer starts.
+    for index = 1, 4 do
+        assert_helpers.equal(game.groups[index].x, -(layers[index].x - layers[1].x))
+    end
+end
+
+function tests.hides_narrow_riches_whole_behind_a_box_even_when_small_on_screen()
+    local game = start_with_narrow_hoard()
+    office_walls.boxes = { { from = { 31, 41 }, to = { 31, 41 }, height = 4000 } }
+
+    draw()
+
+    for index = 1, 4 do
+        assert_helpers.equal(game.layers[index].hidden, true)
     end
 end
 
@@ -955,6 +1037,69 @@ function tests.thin_walls_have_one_face()
     draw()
 
     assert_helpers.equal(#game.shapes, 1)
+end
+
+-- The diagonal wall in front of the desk, 4000 high, with an opening around
+-- where the camera's line to the desk crosses it (halfway along, about 2700
+-- above the ground).
+local function wall_with_opening(opening)
+    return { from = { 28, 40 }, to = { 30, 42 }, height = 4000, openings = { opening } }
+end
+
+function tests.shows_riches_seen_through_an_opening_in_a_wall()
+    local game = start_in_office()
+    office_walls.walls = { wall_with_opening({ from = { 28.5, 40.5 }, to = { 29.5, 41.5 }, height = 3000 }) }
+
+    draw()
+
+    assert_helpers.equal(layer_at(game, desk).hidden, false)
+end
+
+function tests.hides_riches_seen_above_an_opening()
+    local game = start_in_office()
+    office_walls.walls = { wall_with_opening({ from = { 28.5, 40.5 }, to = { 29.5, 41.5 }, height = 2000 }) }
+
+    draw()
+
+    assert_helpers.equal(layer_at(game, desk).hidden, true)
+end
+
+function tests.an_arched_opening_is_taller_in_its_middle()
+    local game = start_in_office()
+    -- Its sides are lower than the line, but its arch is higher in the middle.
+    office_walls.walls = { wall_with_opening({ from = { 28.5, 40.5 }, to = { 29.5, 41.5 }, height = 2000, arch = 3500 }) }
+
+    draw()
+
+    assert_helpers.equal(layer_at(game, desk).hidden, false)
+end
+
+function tests.an_opening_can_start_above_the_ground()
+    local game = start_in_office()
+    -- The line crosses the wall under 3000 high, below this opening.
+    office_walls.walls = { wall_with_opening({ from = { 28.5, 40.5 }, to = { 29.5, 41.5 }, height = 3800, bottom = 3100 }) }
+
+    draw()
+
+    assert_helpers.equal(layer_at(game, desk).hidden, true)
+end
+
+function tests.draws_an_openings_outline_in_its_own_colour()
+    local game = start_in_office()
+    office_walls.walls = { wall_with_opening({ from = { 28.5, 40.5 }, to = { 29.5, 41.5 }, height = 2000, arch = 3500 }) }
+    office_walls.show = true
+
+    draw()
+
+    -- The wall's panel, then the opening.
+    assert_helpers.equal(#game.shapes, 2)
+    local opening = game.shapes[2]
+    assert_helpers.equal(opening.colour, 0x00FFFFFF)
+    local corners = opening.shapePositions
+    assert_helpers.equal(corners[1].y, 3328)
+    assert_helpers.equal(corners[2].y, 3328 + 2000)
+    assert_helpers.equal(round(corners[8].y), 3328 + 3500)
+    assert_helpers.equal(corners[#corners].y, 3328)
 end
 
 function tests.draws_the_walls_when_asked_to()

@@ -109,4 +109,14 @@ function tests.a_line_over_a_sloped_top_misses_it()
     assert_helpers.equal(through_sloped_wall(point(15, 3, 20), point(20, 3, 15)), false)
 end
 
+function tests.a_line_through_an_opening_in_a_wall_misses_it()
+    local function open_in_the_middle(along, height) return along > 0.4 and along < 0.6 and height < 8 end
+    -- Crosses halfway along, 5 high: in the opening.
+    assert_helpers.equal(line_of_sight.passes_through_wall(point(10, 5, 20), point(20, 5, 10), wall_start, wall_end,
+        0, function() return 10 end, open_in_the_middle), false)
+    -- Crosses a quarter along, beside the opening.
+    assert_helpers.equal(line_of_sight.passes_through_wall(point(10, 5, 15), point(15, 5, 10), wall_start, wall_end,
+        0, function() return 10 end, open_in_the_middle), true)
+end
+
 return tests
