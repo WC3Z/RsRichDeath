@@ -27,7 +27,11 @@ office_walls.middle = { 30, 38 }
 ---@type WallBox[]
 office_walls.boxes = {
     -- Deaths desk
-    { from = { 28, 38 }, to = { 32, 38.3 }, height = 1130 }
+    { from = { 27.8, 38 }, to = { 32.2, 38.3 }, height = 1130 },
+    -- Western candle on Deaths desk
+    { from = { 28, 38 }, to = { 28, 38 }, height = 500, offset = 1130 },
+    -- Eastern candle on Deaths desk
+    { from = { 32, 38 }, to = { 32, 38 }, height = 500, offset = 1130 },
 }
 
 -- A thin, straight wall, from the middle of one tile to the middle of another,

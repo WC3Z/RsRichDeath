@@ -1,6 +1,7 @@
 local db = require("src/database/db")
 local line_of_sight = require("src/world/line_of_sight")
 local office_walls = require("src/world/office_walls")
+local riches_spots = require("src/world/riches_spots")
 local wall_measure = require("src/world/wall_measure")
 
 -- Draws Death's riches: game models on a screen layer, moved every frame so
@@ -16,30 +17,6 @@ local subscription_name = "deaths-riches"
 
 -- How much bigger than real life the riches look in the world.
 local riches_size = 1.5
-
--- A place in the world where riches are drawn. The tile and the items are kept
--- as plain values (the arguments for CoordGrid.new, and names in id.Model),
--- so nothing from the game is needed until the riches are drawn.
----@class RichesSpot
----@field tile integer[] Arguments for CoordGrid.new
----@field height number How far above the ground there the riches float
----@field items string[] The riches' models, as names in id.Model, drawn together
----@field item_scale number How big the items are drawn
----@field offset? number[] How far from the middle of the tile, as { x, z } in fine units (a tile is 512 wide)
----@field rotation? number How far the items are turned around the vertical, in degrees
----@field visible_height? number How tall the riches are, in fine units. Used to show the part sticking up over low walls like Death's desk; without it, riches whose bottom is hidden are hidden whole.
-
----@type RichesSpot
-local desk = { tile = { 0, 6, 10, 29, 38 }, height = 1150, items = { "INV_PARTYHAT" }, item_scale = 1, visible_height = 100 }
--- Furniture models didn't tilt right when every model faced the camera on its
--- own. In a model group they're seen from the camera's direction like
--- everything else, so they should work now (not tried yet).
----@type RichesSpot
-local top_left_corner = { tile = { 0, 6, 10, 26, 42 }, height = 0, items = { "INV_GOLDPEICES_10000" }, item_scale = 1, visible_height = 250 }
-local beside_death = { tile = { 0, 6, 10, 32, 40 }, height = 0, items = { "HUMAN_FURNITURE_GOLD_PILE_PLINTH", "HUMAN_FURNITURE_GOLD_PILE_COINS_HUGE" }, item_scale = 1, visible_height = 1800 }
-
----@type RichesSpot[]
-local riches_spots = { desk, top_left_corner, beside_death }
 
 -- Further than this from a spot, the camera can't be in Death's office, so its
 -- riches are hidden. The camera was about 3,000-10,000 away in the office.
@@ -72,6 +49,20 @@ local fov_smoothing = 0.05
 -- riches turn the wrong way when looking down, try -1.
 local roll_sign = 1
 
+-- EXPERIMENT: whether the occluder models (see RichesSpot's occluders) are
+-- drawn. With false they get alpha 0: if the game still uses them for depth,
+-- they hide the riches without a second copy of the desk showing.
+local occluders_visible = false
+-- How many tiles from a spot its occluder locs are looked for.
+local occluder_search_range = 10
+-- Which way round a loc's 90 degree rotation turns its model; try -1 if the
+-- desk copy is turned the wrong way.
+local occluder_yaw_sign = 1
+
+-- How far to the side of a spot a point is drawn to find which way the
+-- screen's sideways is there (see screen_sideways), in fine units.
+local sideways_probe = 200
+
 -- How many times the search for where riches show over a low wall halves
 -- the gap; 8 gets within 1/256 of their visible_height.
 local seen_height_search_steps = 8
@@ -84,17 +75,35 @@ local root
 local game_fov = default_fov
 local fov_measured = false
 
--- A spot's model group, with its camera and one model per item. The group
--- keeps a copy of a camera when it's added, so camera is changed and then
--- swapped in for the group's (see use_camera). The group is in a layer of its
--- own, which cuts off the part of the riches that's behind a low wall (see
--- draw_spot); the layer is what's moved and hidden.
----@class SpotView
+-- One side-by-side strip of a spot's riches: a model group with its camera
+-- and one model per item. The group keeps a copy of a camera when it's added,
+-- so camera is changed and then swapped in for the group's (see use_camera).
+-- The group is in a layer of its own, which is only as wide as the strip and
+-- cuts off the part of the riches that's behind a low wall (see draw_spot);
+-- the layer is what's moved and hidden. The group is the whole view's size,
+-- moved left inside the layer so the strip shows its own slice of it.
+---@class RichesStrip
 ---@field layer table
 ---@field group table
 ---@field camera table
 ---@field camera_index integer?
 ---@field models table[]
+---@field occluders OccluderModel[] EXPERIMENT: models of locs drawn to hide the riches behind them
+---@field left integer Where the strip starts, in pixels from the view's left edge
+---@field width integer In pixels
+
+-- EXPERIMENT: a model of a loc (like Death's desk) drawn in a strip's group, at
+-- the loc's place in the world, so the group's own depth hides the riches
+-- behind it.
+---@class OccluderModel
+---@field model table
+---@field translation Vector3 Where the model goes in the world, before the riches' spot is taken off
+---@field yaw number Radians
+---@field scale Vector3
+
+-- A spot's riches, drawn in one or more strips side by side.
+---@class SpotView
+---@field strips RichesStrip[]
 
 ---@type table<RichesSpot, SpotView>
 local spot_views = {}
@@ -143,14 +152,14 @@ local function tile_position(riches_spot)
     return CoordGrid.new(table.unpack(riches_spot.tile)):ToCoordFine(true).position
 end
 
--- Replaces the group's camera with the view's changed copy.
----@param view SpotView
-local function use_camera(view)
-    if view.camera_index then
-        view.group:DeleteCamera(view.camera_index)
+-- Replaces the strip's group's camera with its changed copy.
+---@param strip RichesStrip
+local function use_camera(strip)
+    if strip.camera_index then
+        strip.group:DeleteCamera(strip.camera_index)
     end
-    view.camera_index = view.group:AddCamera(view.camera)
-    view.group:SwitchCamera(view.camera_index, ui.ModelCameraTransition.NONE, -1, 0)
+    strip.camera_index = strip.group:AddCamera(strip.camera)
+    strip.group:SwitchCamera(strip.camera_index, ui.ModelCameraTransition.NONE, -1, 0)
 end
 
 -- The docs call it ui.ModelCamera, but in the game it's ui.ModelCameraInfo.
@@ -165,16 +174,20 @@ end
 
 -- The riches stand in the middle of the group's scene, at their real size.
 ---@param riches_spot RichesSpot
----@return SpotView
-local function create_view(riches_spot)
+---@param left integer
+---@param width integer
+---@return RichesStrip
+local function create_strip(riches_spot, left, width)
     local layer = ui.Layer.new(root)
-    layer:SetSize(view_size, view_size)
+    layer:SetSize(width, view_size)
     layer.hidden = true
     local group = ui.ModelGroup.new(layer)
-    group:SetPos(0, 0)
+    group:SetPos(-left, 0)
     group:SetSize(view_size, view_size)
-    local view = { layer = layer, group = group, camera = new_camera(), models = {} }
-    use_camera(view)
+    local strip = {
+        layer = layer, group = group, camera = new_camera(), models = {}, occluders = {}, left = left, width = width,
+    }
+    use_camera(strip)
 
     local size = riches_spot.item_scale * riches_size
     for _, item in ipairs(riches_spot.items) do
@@ -185,14 +198,33 @@ local function create_view(riches_spot)
         model:SetModel(ui.ModelType.MODEL, id.Model[item])
         local yaw = math.rad(riches_spot.rotation or 0)
         model:SetTransform(Vector3.new(0, 0, 0), Vector3.new(yaw, 0, 0), Vector3.new(size, size, size), 0)
-        table.insert(view.models, model)
+        table.insert(strip.models, model)
+    end
+    return strip
+end
+
+---@param riches_spot RichesSpot
+---@return SpotView
+local function create_view(riches_spot)
+    local strip_count = riches_spot.strips or 1
+    local strip_width = view_size // strip_count
+    local view = { strips = {} }
+    for index = 0, strip_count - 1 do
+        table.insert(view.strips, create_strip(riches_spot, index * strip_width, strip_width))
     end
     return view
 end
 
+---@param view SpotView
+local function hide_view(view)
+    for _, strip in ipairs(view.strips) do
+        strip.layer.hidden = true
+    end
+end
+
 local function create_views()
     root = ui.Interfaces:GetComponent(id.Component.TOPLEVEL_V2__PLUGIN_BUILD_LAYER_TOP)
-    for _, riches_spot in ipairs(riches_spots) do
+    for _, riches_spot in ipairs(riches_spots.spots) do
         spot_views[riches_spot] = create_view(riches_spot)
     end
 end
@@ -585,47 +617,107 @@ local function rows_to_show(spot, seen_from, layer_top)
     return math.max(0, math.min(view_size, math.floor(cut.y) - layer_top))
 end
 
+-- Which way the screen's sideways is at the spot, as a direction across the
+-- floor square to the camera's line to it, and how many pixels one fine unit
+-- that way moves on screen (negative if it moves left). Found by having the
+-- game draw a point a little to the side. nil when it can't be worked out,
+-- like with the camera straight above the spot.
+---@param spot Vector3
+---@param camera_position Vector3
+---@param on_screen table The spot on screen
+---@return Vector3? across
+---@return number? pixels_per_unit
+local function screen_sideways(spot, camera_position, on_screen)
+    local to_spot = direction(camera_position, spot)
+    local across = normalised(Vector3.new(-to_spot.z, 0, to_spot.x))
+    if not across then
+        return nil, nil
+    end
+    local beside = ScreenConvert.Vector3ToScreen(Vector3.new(spot.x + across.x * sideways_probe, spot.y,
+        spot.z + across.z * sideways_probe))
+    if not beside or beside.x == on_screen.x then
+        return nil, nil
+    end
+    return across, (beside.x - on_screen.x) / sideways_probe
+end
+
+-- Draws one strip: shows it down to where its own slice of the riches goes
+-- behind a low wall, or hides it if the slice is hidden all the way up.
+---@param strip RichesStrip
+---@param riches_spot RichesSpot
+---@param column Vector3 The bottom of the riches in the middle of the strip
+---@param view_left integer
+---@param view_top integer
+---@return boolean shown
+local function draw_strip(strip, riches_spot, column, view_left, view_top)
+    local seen_from = lowest_seen_height(Camera.GetPosition(), column, riches_spot.visible_height or 0)
+    if not seen_from then
+        strip.layer.hidden = true
+        return false
+    end
+    strip.layer:SetPos(view_left + strip.left, view_top)
+    strip.layer:SetSize(strip.width, rows_to_show(column, seen_from, view_top))
+    strip.layer.hidden = false
+    return true
+end
+
 ---@param riches_spot RichesSpot
 local function draw_spot(riches_spot)
     local view = spot_views[riches_spot]
     local spot = find_spot(riches_spot)
     if not spot or is_player_on(riches_spot) then
-        view.layer.hidden = true
+        hide_view(view)
         return
     end
 
     local camera_position = Camera.GetPosition()
     local from_spot_to_camera = direction(spot, camera_position)
     local on_screen = ScreenConvert.Vector3ToScreen(spot)
-    local seen_from = lowest_seen_height(camera_position, spot, riches_spot.visible_height or 0)
-    if math.sqrt(dot(from_spot_to_camera, from_spot_to_camera)) > max_camera_distance or not is_on_screen(on_screen)
-        or not seen_from then
-        view.layer.hidden = true
+    if math.sqrt(dot(from_spot_to_camera, from_spot_to_camera)) > max_camera_distance or not is_on_screen(on_screen) then
+        hide_view(view)
         return
     end
 
-    local layer_top = math.floor(on_screen.y) - view_size // 2
-    view.layer:SetPos(math.floor(on_screen.x) - view_size // 2, layer_top)
-    view.layer:SetSize(view_size, rows_to_show(spot, seen_from, layer_top))
-    view.camera:SetPosition(from_spot_to_camera, 0)
-    view.camera:SetLookAt(Vector3.new(0, 0, 0), 0)
+    local view_left = math.floor(on_screen.x) - view_size // 2
+    local view_top = math.floor(on_screen.y) - view_size // 2
     local roll = view_roll(spot, camera_position, Camera.GetFocusPosition())
-    view.camera:SetYawPitchRoll(Vector3.new(0, 0, roll * roll_sign), 0)
-    view.camera:SetFOV(view_fov(), 0)
-    use_camera(view)
-    view.layer.hidden = false
+    local across, pixels_per_unit = screen_sideways(spot, camera_position, on_screen)
+    for _, strip in ipairs(view.strips) do
+        -- The strip's middle, in pixels from the riches' middle, as a point
+        -- that far to the side in the world. Without a sideways (or with one
+        -- strip) it's the spot itself.
+        local pixels_aside = strip.left + strip.width / 2 - view_size / 2
+        local column = spot
+        if across and pixels_aside ~= 0 then
+            local units_aside = pixels_aside / pixels_per_unit
+            column = Vector3.new(spot.x + across.x * units_aside, spot.y, spot.z + across.z * units_aside)
+        end
+        if draw_strip(strip, riches_spot, column, view_left, view_top) then
+            -- The riches are at the middle of the scene, so everything else is
+            -- placed relative to them.
+            for _, occluder in ipairs(strip.occluders) do
+                occluder.model:SetTransform(direction(spot, occluder.translation), Vector3.new(occluder.yaw, 0, 0),
+                    occluder.scale, 0)
+            end
+            strip.camera:SetPosition(from_spot_to_camera, 0)
+            strip.camera:SetLookAt(Vector3.new(0, 0, 0), 0)
+            strip.camera:SetYawPitchRoll(Vector3.new(0, 0, roll * roll_sign), 0)
+            strip.camera:SetFOV(view_fov(), 0)
+            use_camera(strip)
+        end
+    end
 end
 
 local function draw()
     if not (in_office and World.IsAvailable() and Camera.IsAvailable()) then
         for _, view in pairs(spot_views) do
-            view.layer.hidden = true
+            hide_view(view)
         end
         return
     end
 
     update_game_fov()
-    for _, riches_spot in ipairs(riches_spots) do
+    for _, riches_spot in ipairs(riches_spots.spots) do
         draw_spot(riches_spot)
     end
     if office_walls.show then
@@ -637,7 +729,7 @@ end
 ---@param position Vector3
 ---@return number
 local function tiles_from_desk(position)
-    local desk_position = tile_position(desk)
+    local desk_position = CoordGrid.new(table.unpack(riches_spots.desk_tile)):ToCoordFine(true).position
     return math.sqrt((position.x - desk_position.x) ^ 2 + (position.z - desk_position.z) ^ 2) / tile_size
 end
 
@@ -654,10 +746,123 @@ local function print_player_tile()
     end
 end
 
+-- EXPERIMENT: the loc with the given config name near a tile, if loaded.
+---@param config_name string
+---@param near CoordGrid
+---@return LocEntity?
+local function find_loc(config_name, near)
+    for _, loc in ipairs(LocList.ByDistance(near, occluder_search_range, true)) do
+        if loc.config.configName == config_name then
+            return loc
+        end
+    end
+    return nil
+end
+
+-- EXPERIMENT: where a loc's model origin is: the middle of the tiles it
+-- covers, on the ground there. Worked out from its tile, as loc.position is
+-- somewhere else in Death's office: x matched, but z was 40 tiles north,
+-- likely where the office's instance is copied from.
+---@param loc LocEntity
+---@return Vector3? nil while the ground there hasn't loaded
+local function loc_origin(loc)
+    -- The middle of the loc's first tile, moved to the middle of all of them.
+    local first_tile = loc.coordGrid:ToCoordFine(true).position
+    local x = first_tile.x + (loc.width - 1) * tile_size / 2
+    local z = first_tile.z + (loc.length - 1) * tile_size / 2
+    local ground_height = World.GetGroundHeight(0, math.floor(x), math.floor(z))
+    if ground_height <= 0 then
+        return nil
+    end
+    return Vector3.new(x, ground_height, z)
+end
+
+-- EXPERIMENT: tries every way a component can be made see-through, as alpha
+-- alone left the desk copy showing. Each is tried on its own, so one the game
+-- refuses can't stop the others, and the ones that took are printed once.
+local see_through_printed = false
+---@param model table
+local function make_see_through(model)
+    local ways = {
+        alpha = function() model.alpha = 0 end,
+        colour = function() model.colour = Vector4.new(1, 1, 1, 0) end,
+        rgba = function() model.rgba = 0xFFFFFF00 end,
+    }
+    local results = {}
+    for _, name in ipairs({ "alpha", "colour", "rgba" }) do
+        local took, error_message = pcall(ways[name])
+        table.insert(results, name .. (took and " set" or (" refused: " .. tostring(error_message))))
+    end
+    if not see_through_printed then
+        see_through_printed = true
+        print("[Riches debug] see-through: " .. table.concat(results, ", "))
+    end
+end
+
+-- EXPERIMENT: adds the models of the spot's occluder locs to each of its
+-- strips' groups. The loc's config moves and scales its models: offset, then
+-- scale, then the post offset, so the model's origin ends up at
+-- origin + scale * offset + post offset. Prints what it found once, to
+-- check the numbers.
+---@param riches_spot RichesSpot
+---@return boolean found Whether all of them were found
+local function add_occluders(riches_spot)
+    local view = spot_views[riches_spot]
+    local near = CoordGrid.new(table.unpack(riches_spot.tile))
+    local found_all = true
+    for _, config_name in ipairs(riches_spot.occluders or {}) do
+        local loc = find_loc(config_name, near)
+        local origin = loc and loc_origin(loc)
+        if not origin then
+            found_all = false
+        else
+            local config = loc.config
+            local scale, offset, post = config.modelScale, config.modelOffset, config.modelPostOffset
+            local translation = Vector3.new(origin.x + scale.x * offset.x + post.x,
+                origin.y + scale.y * offset.y + post.y, origin.z + scale.z * offset.z + post.z)
+            local yaw = occluder_yaw_sign * loc.rotationType * math.pi / 2
+            local model_ids = config:GetModelIDs(loc.shapeType)
+            local function xyz(vector)
+                return string.format("(%.2f, %.2f, %.2f)", vector.x, vector.y, vector.z)
+            end
+            local id_texts = {}
+            for _, model_id in ipairs(model_ids) do
+                table.insert(id_texts, tostring(model_id))
+            end
+            print(string.format("[Riches debug] occluder %s: models %s, tile %s, %s size %sx%s, at %s (position says %s) rotation %s",
+                config_name, table.concat(id_texts, ", "), loc.coordGrid.localX, loc.coordGrid.localZ,
+                loc.width, loc.length, xyz(origin), xyz(loc.position), tostring(loc.rotationType)))
+            for _, model_id in ipairs(model_ids) do
+                for _, strip in ipairs(view.strips) do
+                    local model = ui.Model.new(strip.group)
+                    model:SetSize(view_size, view_size)
+                    model:SetModel(ui.ModelType.MODEL, model_id)
+                    if not occluders_visible then
+                        make_see_through(model)
+                    end
+                    table.insert(strip.occluders, { model = model, translation = translation, yaw = yaw, scale = scale })
+                end
+            end
+        end
+    end
+    return found_all
+end
+
+-- EXPERIMENT: the spots whose occluders have been added.
+---@type table<RichesSpot, boolean>
+local occluders_added = {}
+
 local function check_office()
     print_player_tile()
     player_tile = Player.GetEntity().coordGrid:ToCoordFine(true).position
     in_office = tiles_from_desk(player_tile) <= office_radius
+    if in_office then
+        for _, riches_spot in ipairs(riches_spots.spots) do
+            if riches_spot.occluders and not occluders_added[riches_spot] then
+                occluders_added[riches_spot] = add_occluders(riches_spot)
+            end
+        end
+    end
 end
 
 function deaths_riches.start()
@@ -680,11 +885,16 @@ function deaths_riches.stop()
     Event.ServerLogic.Unsubscribe(subscription_name)
     wall_measure.stop()
     for _, view in pairs(spot_views) do
-        for _, model in ipairs(view.models) do
-            model:Destroy()
+        for _, strip in ipairs(view.strips) do
+            for _, model in ipairs(strip.models) do
+                model:Destroy()
+            end
+            for _, occluder in ipairs(strip.occluders) do
+                occluder.model:Destroy()
+            end
+            strip.group:Destroy()
+            strip.layer:Destroy()
         end
-        view.group:Destroy()
-        view.layer:Destroy()
     end
     spot_views = {}
     game_fov = default_fov
@@ -692,6 +902,7 @@ function deaths_riches.stop()
     root = nil
     in_office = false
     player_tile = nil
+    occluders_added = {}
 end
 
 return deaths_riches

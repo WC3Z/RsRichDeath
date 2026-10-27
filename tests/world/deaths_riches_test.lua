@@ -5,20 +5,39 @@ local fake_event = require("tests/helpers/fake_event")
 local fake_game = require("tests/helpers/fake_game")
 local fake_persistent_db = require("tests/helpers/fake_persistent_db")
 local office_walls = require("src/world/office_walls")
+local riches_spots = require("src/world/riches_spots")
 
 local tile_size = 512
 local view_size = 800
 
--- The spots, in the order their groups are built. The spot beside Death comes
--- last, with two items (the plinth and the coins on it).
+-- The spots, in the order their layers and groups are built. The desk and the
+-- corner are one strip each; the spot beside Death comes last, in 8 strips of
+-- 100 pixels, each with two items (the plinth and the coins on it).
 local desk = { index = 1, position = fake_game.desk, height = 1150 }
 local top_left_corner = { index = 2, position = fake_game.top_left_corner, height = 0 }
-local spot_count = 3
-local model_count = 4
+local hoard_strips = 8
+local hoard_strip_width = view_size // hoard_strips
+local layer_count = 2 + hoard_strips
+local model_count = 2 + 2 * hoard_strips
 
 -- Fresh fakes, with the riches stopped from any earlier test, and no walls.
+-- The spots the tests use, so tuning the real ones in riches_spots doesn't
+-- change the tests: on the desk, in the corner, and the hoard beside Death.
+local function test_spots()
+    return {
+        { tile = { 0, 6, 10, 29, 38 }, height = 1150, items = { "INV_PARTYHAT" }, item_scale = 1, visible_height = 300 },
+        { tile = { 0, 6, 10, 26, 42 }, height = 0, items = { "INV_GOLDPEICES_10000" }, item_scale = 1, visible_height = 250 },
+        {
+            tile = { 0, 6, 10, 32, 40 }, height = 0,
+            items = { "HUMAN_FURNITURE_GOLD_PILE_PLINTH", "HUMAN_FURNITURE_GOLD_PILE_COINS_HUGE" }, item_scale = 1,
+            visible_height = 1800, strips = 8,
+        },
+    }
+end
+
 local function install()
     deaths_riches.stop()
+    riches_spots.spots = test_spots()
     office_walls.boxes = {}
     office_walls.walls = {}
     office_walls.middle = { 30, 38 }
@@ -123,21 +142,42 @@ function tests.does_nothing_when_turned_off()
     assert_helpers.equal(next(Event.Draw.subscribers), nil)
 end
 
-function tests.builds_a_model_group_in_a_layer_per_spot()
+function tests.builds_a_model_group_in_a_layer_per_strip()
     local game = install()
 
     deaths_riches.start()
 
-    assert_helpers.equal(#game.groups, spot_count)
-    assert_helpers.equal(#game.layers, spot_count)
+    assert_helpers.equal(#game.groups, layer_count)
+    assert_helpers.equal(#game.layers, layer_count)
     for index, group in ipairs(game.groups) do
         local layer = game.layers[index]
         assert_helpers.equal(layer.parent, game.root)
         assert_helpers.equal(group.parent, layer)
-        assert_helpers.equal(group.x, 0)
         assert_helpers.equal(group.y, 0)
         assert_helpers.equal(group.width, view_size)
         assert_helpers.equal(group.height, view_size)
+    end
+end
+
+function tests.a_spot_in_one_strip_shows_its_whole_group()
+    local game = install()
+
+    deaths_riches.start()
+
+    assert_helpers.equal(game.layers[desk.index].width, view_size)
+    assert_helpers.equal(game.groups[desk.index].x, 0)
+end
+
+function tests.each_strip_shows_its_own_slice_of_the_group()
+    local game = install()
+
+    deaths_riches.start()
+
+    for strip = 0, hoard_strips - 1 do
+        local index = 3 + strip
+        assert_helpers.equal(game.layers[index].width, hoard_strip_width)
+        -- Moved left inside the strip's layer, by where the strip starts.
+        assert_helpers.equal(game.groups[index].x, -strip * hoard_strip_width)
     end
 end
 
@@ -161,10 +201,14 @@ function tests.puts_each_spots_items_in_the_middle_of_its_group()
     assert_helpers.equal(#game.models, model_count)
     assert_helpers.equal(game.models[1].model_id, "INV_PARTYHAT")
     assert_helpers.equal(game.models[2].model_id, "INV_GOLDPEICES_10000")
-    assert_helpers.equal(game.models[3].model_id, "HUMAN_FURNITURE_GOLD_PILE_PLINTH")
-    assert_helpers.equal(game.models[4].model_id, "HUMAN_FURNITURE_GOLD_PILE_COINS_HUGE")
-    -- Each spot's items are in its own group, and both of the last spot's in its group.
-    local groups = { game.groups[1], game.groups[2], game.groups[3], game.groups[3] }
+    -- Every strip of the last spot has both of its items.
+    local groups = { game.groups[1], game.groups[2] }
+    for strip = 0, hoard_strips - 1 do
+        assert_helpers.equal(game.models[3 + 2 * strip].model_id, "HUMAN_FURNITURE_GOLD_PILE_PLINTH")
+        assert_helpers.equal(game.models[4 + 2 * strip].model_id, "HUMAN_FURNITURE_GOLD_PILE_COINS_HUGE")
+        table.insert(groups, game.groups[3 + strip])
+        table.insert(groups, game.groups[3 + strip])
+    end
     for index, model in ipairs(game.models) do
         assert_helpers.equal(model.parent, groups[index])
         assert_helpers.equal(model.type, "MODEL")
@@ -369,7 +413,7 @@ function tests.waits_for_the_ground_under_the_spots_to_load()
 
     game.ground_height = 3328
     draw()
-    assert_helpers.equal(#visible_layers(game), spot_count)
+    assert_helpers.equal(#visible_layers(game), layer_count)
 end
 
 function tests.counts_as_in_the_office_up_to_forty_tiles_from_the_desk()
@@ -378,7 +422,7 @@ function tests.counts_as_in_the_office_up_to_forty_tiles_from_the_desk()
     game.move_player(fake_game.desk.x + 40 * tile_size, fake_game.desk.z)
     tick()
     draw()
-    assert_helpers.equal(#visible_layers(game), spot_count)
+    assert_helpers.equal(#visible_layers(game), layer_count)
 
     game.move_player(fake_game.desk.x + 41 * tile_size, fake_game.desk.z)
     tick()
@@ -510,44 +554,192 @@ function tests.shows_riches_the_camera_sees_over_a_diagonal_wall()
     assert_helpers.equal(layer_at(game, desk).hidden, false)
 end
 
--- The hoard beside Death, which is 1800 tall. A one-tile box just in front of
--- it on the camera's side, as high as the desk, is in the way of its bottom
--- but not of its top.
-local beside_death = { index = 3 }
+-- The hoard beside Death, which is 1800 tall, in 8 strips. A one-tile box
+-- just in front of it on the camera's side, as high as the desk, is in the
+-- way of the bottom of its middle, but not of its top or its sides.
 local desk_high_box = { from = { 31, 41 }, to = { 31, 41 }, height = 1100 }
 
-function tests.cuts_off_riches_where_they_go_behind_a_low_wall()
+local function hoard_layers(game)
+    local layers = {}
+    for strip = 0, hoard_strips - 1 do
+        table.insert(layers, game.layers[3 + strip])
+    end
+    return layers
+end
+
+-- How many of the hoard's strips are hidden, cut off, and shown whole.
+local function count_hoard_strips(game)
+    local hidden, cut, whole = 0, 0, 0
+    for _, layer in ipairs(hoard_layers(game)) do
+        if layer.hidden then
+            hidden = hidden + 1
+        elseif layer.height < view_size then
+            cut = cut + 1
+        else
+            whole = whole + 1
+        end
+    end
+    return hidden, cut, whole
+end
+
+function tests.places_the_strips_side_by_side_over_the_spot()
+    local game = start_in_office()
+    project_like_camera(game, 60)
+
+    draw()
+
+    local layers = hoard_layers(game)
+    for strip = 2, hoard_strips do
+        assert_helpers.equal(layers[strip].x, layers[1].x + (strip - 1) * hoard_strip_width)
+        assert_helpers.equal(layers[strip].y, layers[1].y)
+    end
+end
+
+function tests.cuts_off_only_the_strips_behind_a_low_wall()
     local game = start_in_office()
     project_like_camera(game, 60)
     office_walls.boxes = { desk_high_box }
 
     draw()
 
-    local layer = layer_at(game, beside_death)
-    assert_helpers.equal(layer.hidden, false)
-    -- The riches' bottom is in the middle of the layer, so only rows above it show.
-    assert_helpers.equal(layer.height > 0 and layer.height < view_size // 2, true)
+    local hidden = count_hoard_strips(game)
+    assert_helpers.equal(hidden, 0)
+    -- The box is in front of the hoard's middle: the middle strips are cut
+    -- off a bit below where its bottom is (the middle of the layer), and the
+    -- outer strips are whole.
+    local layers = hoard_layers(game)
+    for _, middle in ipairs({ 4, 5 }) do
+        assert_helpers.equal(layers[middle].height > 0 and layers[middle].height < view_size * 0.6, true)
+    end
+    for _, outer in ipairs({ 1, 2, 7, 8 }) do
+        assert_helpers.equal(layers[outer].height, view_size)
+    end
 end
 
-function tests.hides_riches_that_are_behind_a_wall_all_the_way_up()
+function tests.hides_only_the_strips_behind_a_tall_box()
     local game = start_in_office()
     project_like_camera(game, 60)
     office_walls.boxes = { { from = { 31, 41 }, to = { 31, 41 }, height = 4000 } }
 
     draw()
 
-    assert_helpers.equal(layer_at(game, beside_death).hidden, true)
+    local hidden, _, whole = count_hoard_strips(game)
+    assert_helpers.equal(hidden > 0, true)
+    assert_helpers.equal(whole > 0, true)
 end
 
-function tests.shows_riches_whole_when_nothing_is_in_the_way()
+function tests.shows_every_strip_whole_when_nothing_is_in_the_way()
     local game = start_in_office()
     project_like_camera(game, 60)
 
     draw()
 
-    local layer = layer_at(game, beside_death)
-    assert_helpers.equal(layer.hidden, false)
-    assert_helpers.equal(layer.height, view_size)
+    local hidden, cut, whole = count_hoard_strips(game)
+    assert_helpers.equal(hidden, 0)
+    assert_helpers.equal(cut, 0)
+    assert_helpers.equal(whole, hoard_strips)
+end
+
+-- EXPERIMENT: occluders. A spot beside the desk with Death's desk as its
+-- occluder, and a fake desk loc a tile south of it.
+local occluder_spot = { tile = { 0, 6, 10, 29, 40 }, height = 0, items = { "INV_PARTYHAT" }, item_scale = 1, occluders = { "DESK" } }
+local occluder_spot_position = { x = (6 * 64 + 29) * tile_size + tile_size // 2, z = (10 * 64 + 40) * tile_size + tile_size // 2 }
+
+local function fake_desk_loc()
+    return {
+        config = {
+            configName = "DESK",
+            modelScale = Vector3.new(1, 1, 1),
+            modelOffset = Vector3.new(0, 0, 0),
+            modelPostOffset = Vector3.new(0, 10, 0),
+            GetModelIDs = function() return { 111, 222 } end,
+        },
+        shapeType = 10,
+        rotationType = 1,
+        -- A 3 by 1 desk whose middle tile is a tile south of the spot.
+        coordGrid = {
+            localX = 28, localZ = 39,
+            ToCoordFine = function()
+                return { position = Vector3.new(occluder_spot_position.x - tile_size, 0, occluder_spot_position.z - tile_size) }
+            end,
+        },
+        width = 3,
+        length = 1,
+        -- Where the game says it is, which in Death's office is somewhere else.
+        position = Vector3.new(0, 0, 0),
+    }
+end
+
+-- Started with only the occluder spot, in the office.
+local function start_with_occluder_spot(locs)
+    local game = install()
+    riches_spots.spots = { occluder_spot }
+    game.locs = locs
+    deaths_riches.start()
+    return game
+end
+
+function tests.draws_the_occluders_models_in_the_spots_group()
+    local game = start_with_occluder_spot({ fake_desk_loc() })
+    tick()
+
+    draw()
+
+    -- The spot's own item, then the desk's two models, all in its group.
+    assert_helpers.equal(#game.models, 3)
+    assert_helpers.equal(game.models[2].model_id, 111)
+    assert_helpers.equal(game.models[3].model_id, 222)
+    assert_helpers.equal(game.models[2].parent, game.groups[1])
+end
+
+function tests.places_the_occluder_where_the_loc_is_from_the_riches()
+    local game = start_with_occluder_spot({ fake_desk_loc() })
+    tick()
+
+    draw()
+
+    local transform = game.models[2].transform
+    -- The middle of the desk's tiles, a tile south of the riches, on the
+    -- ground like them, plus the config's post offset.
+    assert_helpers.equal(transform.position.x, 0)
+    assert_helpers.equal(transform.position.y, 10)
+    assert_helpers.equal(transform.position.z, -tile_size)
+    -- Turned 90 degrees, like the loc.
+    assert_helpers.equal(transform.rotation.x, math.pi / 2)
+    assert_helpers.equal(transform.scale.x, 1)
+end
+
+function tests.looks_for_occluders_again_until_they_are_loaded()
+    local game = start_with_occluder_spot({})
+    tick()
+    assert_helpers.equal(#game.models, 1)
+
+    game.locs = { fake_desk_loc() }
+    tick()
+    tick()
+
+    assert_helpers.equal(#game.models, 3)
+end
+
+function tests.waits_for_the_ground_under_an_occluder_to_load()
+    local game = start_with_occluder_spot({ fake_desk_loc() })
+    game.ground_height = 0
+    tick()
+    assert_helpers.equal(#game.models, 1)
+
+    game.ground_height = 3328
+    tick()
+
+    assert_helpers.equal(#game.models, 3)
+end
+
+function tests.ignores_other_locs()
+    local other = fake_desk_loc()
+    other.config.configName = "CHAIR"
+    local game = start_with_occluder_spot({ other })
+    tick()
+
+    assert_helpers.equal(#game.models, 1)
 end
 
 function tests.draws_a_wall_as_a_panel_when_asked_to()
@@ -769,7 +961,7 @@ function tests.starting_again_while_running_changes_nothing()
     deaths_riches.start()
     draw()
 
-    assert_helpers.equal(#game.groups, spot_count)
+    assert_helpers.equal(#game.groups, layer_count)
     assert_helpers.equal(#game.models, model_count)
 end
 
@@ -799,8 +991,8 @@ function tests.can_start_again_after_stopping()
     tick()
     draw()
 
-    assert_helpers.equal(#game.groups, 2 * spot_count)
-    assert_helpers.equal(#visible_layers(game), spot_count)
+    assert_helpers.equal(#game.groups, 2 * layer_count)
+    assert_helpers.equal(#visible_layers(game), layer_count)
 end
 
 return tests

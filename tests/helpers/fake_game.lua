@@ -72,6 +72,7 @@ end
 --   shapes           the settings of every ShapeList.Draw call
 --   mouse            Mouse.GetPosition()
 --   floor_at(point)    what ScreenConvert.ScreenToCoordFine returns for a screen point
+--   locs             what LocList.ByDistance returns
 function fake_game.install()
     local game = {
         root = { width = 1920, height = 1080 },
@@ -82,6 +83,7 @@ function fake_game.install()
         to_screen = screen_point,
         shapes = {},
         floor_at = function() return nil end,
+        locs = {},
     }
     game.camera = vector3(fake_game.desk.x, 3328 + 1150 + 3000, fake_game.desk.z + 3000)
     game.focus = vector3(fake_game.desk.x, 3328 + 1150, fake_game.desk.z)
@@ -200,6 +202,11 @@ function fake_game.install()
     ShapeList = {
         Draw = function(settings)
             table.insert(game.shapes, settings)
+        end,
+    }
+    LocList = {
+        ByDistance = function()
+            return game.locs
         end,
     }
     Player = {
