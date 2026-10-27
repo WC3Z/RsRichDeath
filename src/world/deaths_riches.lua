@@ -14,6 +14,8 @@ local wall_measure = require("src/world/wall_measure")
 local deaths_riches = {}
 
 local subscription_name = "deaths-riches"
+-- EXPERIMENT: for Shift+N, see on_see_through_key.
+local see_through_subscription_name = "deaths-riches-see-through"
 
 -- How much bigger than real life the riches look in the world.
 local riches_size = 1.5
@@ -777,26 +779,53 @@ local function loc_origin(loc)
     return Vector3.new(x, ground_height, z)
 end
 
--- EXPERIMENT: tries every way a component can be made see-through, as alpha
--- alone left the desk copy showing. Each is tried on its own, so one the game
--- refuses can't stop the others, and the ones that took are printed once.
-local see_through_printed = false
+-- EXPERIMENT: alpha, colour and rgba at 0 all left the desk copy showing, so
+-- this swaps the desk's materials for a see-through one. The API can't tell
+-- which materials a model uses, so these are guesses (at most 16, one per
+-- rematerial slot): 65535 for faces without a material, generic wood, bone,
+-- skull and candle ones, and the office's own (BSLAY_2014_...).
+local guessed_occluder_materials = {
+    65535, 49, 330, 331, 332, 338, 443, 453, 985, 1616, 1639, 1659, 4954, 4962, 4963, 4964,
+}
+-- What they're swapped to; Shift+N goes to the next one, while the wall
+-- outlines are shown.
+local see_through_materials = {
+    { id = 1433, name = "INVISIBLE_TEXTURE" },
+    { id = 1435, name = "EMPTY_TEXTURE" },
+    { id = 3495, name = "INVISIBLE_TEXTURE_SOFTWARE" },
+    { id = 1270, name = "BLANK_EMISSIVE_GRADIENT_TRANSPARENCY" },
+}
+local see_through_index = 1
+-- Every occluder model made see-through, so Shift+N can change them all.
+local see_through_models = {}
+
+---@param model table
+local function swap_to_see_through(model)
+    local replacement = see_through_materials[see_through_index].id
+    for slot, source in ipairs(guessed_occluder_materials) do
+        pcall(model.SetRematerial, model, slot - 1, source, replacement)
+    end
+end
+
 ---@param model table
 local function make_see_through(model)
-    local ways = {
-        alpha = function() model.alpha = 0 end,
-        colour = function() model.colour = Vector4.new(1, 1, 1, 0) end,
-        rgba = function() model.rgba = 0xFFFFFF00 end,
-    }
-    local results = {}
-    for _, name in ipairs({ "alpha", "colour", "rgba" }) do
-        local took, error_message = pcall(ways[name])
-        table.insert(results, name .. (took and " set" or (" refused: " .. tostring(error_message))))
+    swap_to_see_through(model)
+    table.insert(see_through_models, model)
+end
+
+---@param event KeyDownEventPayload
+local function on_see_through_key(event)
+    if not office_walls.show or event.isRepeat or (event.modifiers & ModifierKey.SHIFT) == 0
+        or event.gameKey ~= GameKey.N or #see_through_models == 0 then
+        return
     end
-    if not see_through_printed then
-        see_through_printed = true
-        print("[Riches debug] see-through: " .. table.concat(results, ", "))
+    see_through_index = see_through_index % #see_through_materials + 1
+    for _, model in ipairs(see_through_models) do
+        swap_to_see_through(model)
     end
+    local material = see_through_materials[see_through_index]
+    print(string.format("[Riches debug] see-through material %d of %d: %s (%d)",
+        see_through_index, #see_through_materials, material.name, material.id))
 end
 
 -- EXPERIMENT: adds the models of the spot's occluder locs to each of its
@@ -878,12 +907,14 @@ function deaths_riches.start()
     Event.Draw.Subscribe(subscription_name, draw)
     Event.ServerLogic.Subscribe(subscription_name, check_office)
     wall_measure.start()
+    Event.KeyDown.Subscribe(see_through_subscription_name, on_see_through_key)
 end
 
 function deaths_riches.stop()
     Event.Draw.Unsubscribe(subscription_name)
     Event.ServerLogic.Unsubscribe(subscription_name)
     wall_measure.stop()
+    Event.KeyDown.Unsubscribe(see_through_subscription_name)
     for _, view in pairs(spot_views) do
         for _, strip in ipairs(view.strips) do
             for _, model in ipairs(strip.models) do
@@ -903,6 +934,8 @@ function deaths_riches.stop()
     in_office = false
     player_tile = nil
     occluders_added = {}
+    see_through_models = {}
+    see_through_index = 1
 end
 
 return deaths_riches

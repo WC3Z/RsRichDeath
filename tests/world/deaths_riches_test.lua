@@ -733,6 +733,48 @@ function tests.waits_for_the_ground_under_an_occluder_to_load()
     assert_helpers.equal(#game.models, 3)
 end
 
+-- EXPERIMENT: the occluder copy is made see-through by swapping guessed
+-- materials (all 16 slots) for an invisible one, which Shift+N changes.
+local function press_shift_n()
+    Event.KeyDown.fire({ gameKey = GameKey.N, modifiers = ModifierKey.SHIFT, isRepeat = false })
+end
+
+function tests.swaps_the_occluders_materials_for_a_see_through_one()
+    local game = start_with_occluder_spot({ fake_desk_loc() })
+    tick()
+
+    local rematerials = game.models[2].rematerials
+    assert_helpers.equal(rematerials[0][2], 1433)
+    assert_helpers.equal(rematerials[15][2], 1433)
+    assert_helpers.equal(rematerials[16], nil)
+end
+
+function tests.shift_n_tries_the_next_see_through_material()
+    local game = start_with_occluder_spot({ fake_desk_loc() })
+    tick()
+    office_walls.show = true
+
+    local printed = {}
+    local real_print = print
+    print = function(text) table.insert(printed, text) end
+    local ok, error_message = pcall(press_shift_n)
+    print = real_print
+    assert(ok, error_message)
+
+    assert_helpers.equal(game.models[2].rematerials[0][2], 1435)
+    assert_helpers.equal(game.models[3].rematerials[0][2], 1435)
+    assert_helpers.equal(printed[1], "[Riches debug] see-through material 2 of 4: EMPTY_TEXTURE (1435)")
+end
+
+function tests.shift_n_does_nothing_while_the_wall_outlines_are_off()
+    local game = start_with_occluder_spot({ fake_desk_loc() })
+    tick()
+
+    press_shift_n()
+
+    assert_helpers.equal(game.models[2].rematerials[0][2], 1433)
+end
+
 function tests.ignores_other_locs()
     local other = fake_desk_loc()
     other.config.configName = "CHAIR"

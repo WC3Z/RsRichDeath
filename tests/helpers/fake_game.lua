@@ -123,6 +123,11 @@ function fake_game.install()
     local function new_model(parent)
         local model = new_component(parent)
         function model.SetModel(self, type, model_id) self.type, self.model_id = type, model_id end
+        -- Keeps each rematerial slot as { source, replacement }.
+        function model.SetRematerial(self, slot, source, replacement)
+            self.rematerials = self.rematerials or {}
+            self.rematerials[slot] = { source, replacement }
+        end
         function model.SetTransform(self, position, rotation, scale, duration)
             self.transform = { position = position, rotation = rotation, scale = scale, duration = duration }
         end
@@ -198,7 +203,7 @@ function fake_game.install()
     }
     Mouse = { GetPosition = function() return game.mouse end }
     ModifierKey = { SHIFT = 1, CONTROL = 2 }
-    GameKey = { H = 53, M = 70 }
+    GameKey = { H = 53, M = 70, N = 69 }
     ShapeList = {
         Draw = function(settings)
             table.insert(game.shapes, settings)
