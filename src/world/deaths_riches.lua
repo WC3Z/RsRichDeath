@@ -242,7 +242,9 @@ local function hide_view(view)
 end
 
 local function create_views()
-    root = ui.Interfaces:GetComponent(id.Component.TOPLEVEL_V2__PLUGIN_BUILD_LAYER_TOP)
+    -- The bottom plugin layer is under the game's interfaces, so those cover
+    -- the riches, like they cover the world.
+    root = ui.Interfaces:GetComponent(id.Component.TOPLEVEL_V2__PLUGIN_BUILD_LAYER_BOTTOM)
     for _, riches_spot in ipairs(riches_spots.spots) do
         spot_views[riches_spot] = create_view(riches_spot)
     end
