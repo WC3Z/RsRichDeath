@@ -70,6 +70,7 @@ end
 --   to_screen(point)   what ScreenConvert.Vector3ToScreen returns for a point
 --   move_player(x, z)  puts the player at the given fine coordinates
 --   shapes           the settings of every ShapeList.Draw call
+--   moved_to_front   every component MoveToFront was called on, in order
 --   mouse            Mouse.GetPosition()
 --   floor_at(point)    what ScreenConvert.ScreenToCoordFine returns for a screen point
 --   locs             what LocList.ByDistance returns
@@ -82,6 +83,7 @@ function fake_game.install()
         ground_height = 3328,
         to_screen = screen_point,
         shapes = {},
+        moved_to_front = {},
         floor_at = function() return nil end,
         locs = {},
     }
@@ -116,6 +118,7 @@ function fake_game.install()
         function component.SetSize(self, width, height) self.width, self.height = width, height end
         function component.SetPos(self, x, y) self.x, self.y = x, y end
         function component.Destroy(self) self.destroyed = true end
+        function component.MoveToFront(self) table.insert(game.moved_to_front, self) end
         return component
     end
 

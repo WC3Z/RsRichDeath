@@ -106,6 +106,7 @@ local fov_measured = false
 -- A spot's riches, drawn in one or more strips side by side.
 ---@class SpotView
 ---@field strips RichesStrip[]
+---@field distance number? How far the camera is from the riches, while they're shown
 
 ---@type table<RichesSpot, SpotView>
 local spot_views = {}
@@ -981,6 +982,7 @@ end
 ---@param riches_spot RichesSpot
 local function draw_spot(riches_spot)
     local view = spot_views[riches_spot]
+    view.distance = nil
     local spot = find_spot(riches_spot)
     if not spot or is_player_on(riches_spot) then
         hide_view(view)
@@ -995,6 +997,7 @@ local function draw_spot(riches_spot)
         return
     end
 
+    view.distance = math.sqrt(dot(from_spot_to_camera, from_spot_to_camera))
     local view_left = math.floor(on_screen.x) - view_size // 2
     local view_top = math.floor(on_screen.y) - view_size // 2
     local roll = view_roll(spot, camera_position, Camera.GetFocusPosition())
@@ -1030,6 +1033,38 @@ local function draw_spot(riches_spot)
     end
 end
 
+-- The shown views, farthest first, as they were last put on top of each other.
+---@type SpotView[]
+local stacking = {}
+
+-- Puts closer riches on top of farther ones where they overlap on screen, by
+-- moving the shown views to the front from the farthest to the nearest. Only
+-- done when that order changes.
+local function stack_by_distance()
+    local shown = {}
+    for _, riches_spot in ipairs(riches_spots.spots) do
+        local view = spot_views[riches_spot]
+        if view.distance then
+            table.insert(shown, view)
+        end
+    end
+    table.sort(shown, function(a, b) return a.distance > b.distance end)
+
+    local changed = #shown ~= #stacking
+    for index, view in ipairs(shown) do
+        changed = changed or stacking[index] ~= view
+    end
+    if not changed then
+        return
+    end
+    for _, view in ipairs(shown) do
+        for _, strip in ipairs(view.strips) do
+            strip.layer:MoveToFront()
+        end
+    end
+    stacking = shown
+end
+
 local function draw()
     if not (in_office and World.IsAvailable() and Camera.IsAvailable()) then
         for _, view in pairs(spot_views) do
@@ -1043,6 +1078,7 @@ local function draw()
     for _, riches_spot in ipairs(riches_spots.spots) do
         draw_spot(riches_spot)
     end
+    stack_by_distance()
     if office_walls.show then
         draw_walls()
     end
@@ -1253,6 +1289,7 @@ function deaths_riches.stop()
         end
     end
     spot_views = {}
+    stacking = {}
     game_fov = default_fov
     fov_measured = false
     root = nil

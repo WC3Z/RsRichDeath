@@ -1282,6 +1282,47 @@ function tests.doesnt_draw_the_walls_unless_asked_to()
     assert_helpers.equal(#game.shapes, 0)
 end
 
+-- Which spot's layer was moved to the front last, so is drawn on top.
+local function on_top(game)
+    local last = game.moved_to_front[#game.moved_to_front]
+    for index, layer in ipairs(game.layers) do
+        if layer == last then
+            return index
+        end
+    end
+end
+
+function tests.draws_the_nearest_riches_on_top()
+    local game = install()
+    db.set_hiding_strips(1)
+    deaths_riches.start()
+    tick()
+
+    -- The camera is north of the desk, so the corner (north-west of it) is
+    -- nearer than the desk's riches; then south of it, where it's the other way.
+    game.camera = Vector3.new(fake_game.desk.x, 3328 + 1150, fake_game.top_left_corner.z + 1000)
+    draw()
+    local north = on_top(game)
+    game.camera = Vector3.new(fake_game.desk.x, 3328 + 1150, fake_game.desk.z - 3000)
+    draw()
+    local south = on_top(game)
+
+    -- The layers are 1 (desk), 2 (corner) and 3 (hoard).
+    assert_helpers.equal(north, 2)
+    assert_helpers.equal(south, 1)
+end
+
+function tests.moves_the_riches_only_when_their_order_changes()
+    local game = start_in_office()
+    draw()
+    local moves = #game.moved_to_front
+
+    draw()
+
+    assert_helpers.equal(moves > 0, true)
+    assert_helpers.equal(#game.moved_to_front, moves)
+end
+
 function tests.starting_again_while_running_changes_nothing()
     local game = start_in_office()
 
