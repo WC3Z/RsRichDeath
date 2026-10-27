@@ -65,9 +65,13 @@ local occluder_yaw_sign = 1
 -- screen's sideways is there (see screen_sideways), in fine units.
 local sideways_probe = 200
 
--- How many times the search for where riches show over a low wall halves
--- the gap; 8 gets within 1/256 of their visible_height.
-local seen_height_search_steps = 8
+-- How many heights up the riches are checked for walls (plus their bottom),
+-- before the ends of what's seen are narrowed down (see seen_range).
+local seen_range_checks = 8
+
+-- How many times the search for the ends of what's seen halves the gap. The
+-- gap starts at 1/8 of the riches' visible_height, so 5 gets within 1/256.
+local seen_height_search_steps = 5
 
 -- The groups' cameras only draw what's between these distances from them.
 local near_clip = 10
@@ -532,6 +536,40 @@ local function opening_check(places)
     end
 end
 
+-- The boxes and walls, worked out in the world. Doing that needs ground
+-- heights from the game, and the walls are checked many times a frame (see
+-- seen_range), so it's done once per frame, in prepare_obstacles.
+---@class PreparedWall
+---@field faces Vector3[][]
+---@field bottom number
+---@field top_at fun(along: number): number
+---@field is_open_at (fun(along: number, height: number): boolean)?
+
+---@type { boxes: { min: Vector3, max: Vector3 }[], walls: PreparedWall[] }
+local obstacles = { boxes = {}, walls = {} }
+
+local function prepare_obstacles()
+    local boxes, walls = {}, {}
+    for _, box in ipairs(office_walls.boxes) do
+        local min, max = wall_corners(box)
+        if min and max then
+            table.insert(boxes, { min = min, max = max })
+        end
+    end
+    for _, wall in ipairs(office_walls.walls) do
+        local wall_start, wall_end = wall_ends(wall)
+        if wall_start and wall_end then
+            table.insert(walls, {
+                faces = wall_faces(wall, wall_start, wall_end),
+                bottom = wall_start.y,
+                top_at = wall_top(wall, wall_start.y),
+                is_open_at = opening_check(wall_openings(wall, wall_start, wall_end)),
+            })
+        end
+    end
+    obstacles = { boxes = boxes, walls = walls }
+end
+
 -- Whether a wall box or line is between the camera and the spot. A box the
 -- spot is inside doesn't count, or riches standing against a wall would never
 -- show.
@@ -539,23 +577,17 @@ end
 ---@param spot Vector3
 ---@return boolean
 local function is_behind_wall(camera_position, spot)
-    for _, box in ipairs(office_walls.boxes) do
-        local min, max = wall_corners(box)
-        if min and max and not line_of_sight.is_inside_box(spot, min, max)
-            and line_of_sight.passes_through_box(camera_position, spot, min, max) then
+    for _, box in ipairs(obstacles.boxes) do
+        if not line_of_sight.is_inside_box(spot, box.min, box.max)
+            and line_of_sight.passes_through_box(camera_position, spot, box.min, box.max) then
             return true
         end
     end
-    for _, wall in ipairs(office_walls.walls) do
-        local wall_start, wall_end = wall_ends(wall)
-        if wall_start and wall_end then
-            local top_at = wall_top(wall, wall_start.y)
-            local is_open_at = opening_check(wall_openings(wall, wall_start, wall_end))
-            for _, face in ipairs(wall_faces(wall, wall_start, wall_end)) do
-                if line_of_sight.passes_through_wall(camera_position, spot, face[1], face[2], wall_start.y, top_at,
-                    is_open_at) then
-                    return true
-                end
+    for _, wall in ipairs(obstacles.walls) do
+        for _, face in ipairs(wall.faces) do
+            if line_of_sight.passes_through_wall(camera_position, spot, face[1], face[2], wall.bottom, wall.top_at,
+                wall.is_open_at) then
+                return true
             end
         end
     end
@@ -693,51 +725,89 @@ local function is_player_on(riches_spot)
     return player_tile ~= nil and player_tile.x == middle.x and player_tile.z == middle.z
 end
 
--- How far up the riches the camera starts to see them, over whatever wall is
--- in the way: 0 when nothing is in the way, nil when they're hidden all the
--- way up to visible_height. In between, it's found by halving the gap between
--- a hidden and a seen height a few times.
+-- The part of the riches the camera sees past whatever is in the way, as
+-- heights from their bottom. Walls can hide their bottom (the desk), their top
+-- (the band of an arch they're seen through) or both, so heights all the way
+-- up are checked, the longest unbroken run that's seen is taken, and both its
+-- ends are narrowed down by halving the gap to the hidden height next to them.
+-- nil when none of it is seen. Without a visible_height only their bottom is
+-- checked, and they're seen whole or not at all.
 ---@param camera_position Vector3
----@param spot Vector3
+---@param column Vector3 The bottom of the riches where they're checked
 ---@param visible_height number
----@return number?
-local function lowest_seen_height(camera_position, spot, visible_height)
-    local function hidden_at(height)
-        return is_behind_wall(camera_position, Vector3.new(spot.x, spot.y + height, spot.z))
+---@return { from: number, to: number }?
+local function seen_range(camera_position, column, visible_height)
+    local function seen_at(height)
+        return not is_behind_wall(camera_position, Vector3.new(column.x, column.y + height, column.z))
     end
-    if not hidden_at(0) then
-        return 0
+    if visible_height <= 0 then
+        return seen_at(0) and { from = 0, to = 0 } or nil
     end
-    if visible_height <= 0 or hidden_at(visible_height) then
-        return nil
+
+    local heights, seen = {}, {}
+    for check = 0, seen_range_checks do
+        heights[check] = visible_height * check / seen_range_checks
+        seen[check] = seen_at(heights[check])
     end
-    local hidden, seen = 0, visible_height
-    for _ = 1, seen_height_search_steps do
-        local middle = (hidden + seen) / 2
-        if hidden_at(middle) then
-            hidden = middle
+    local best_first, best_last, run_first
+    for check = 0, seen_range_checks do
+        if seen[check] then
+            run_first = run_first or check
+            if not best_first or check - run_first > best_last - best_first then
+                best_first, best_last = run_first, check
+            end
         else
-            seen = middle
+            run_first = nil
         end
     end
-    return seen
+    if not best_first then
+        return nil
+    end
+
+    -- The seen height closest to the hidden one, after halving the gap.
+    local function edge(hidden, seen_height)
+        for _ = 1, seen_height_search_steps do
+            local middle = (hidden + seen_height) / 2
+            if seen_at(middle) then
+                seen_height = middle
+            else
+                hidden = middle
+            end
+        end
+        return seen_height
+    end
+    local from, to = heights[best_first], heights[best_last]
+    if best_first > 0 then
+        from = edge(heights[best_first - 1], from)
+    end
+    if best_last < seen_range_checks then
+        to = edge(heights[best_last + 1], to)
+    end
+    return { from = from, to = to }
 end
 
--- How many rows of the layer, from its top, to show: down to where the
--- riches go behind a low wall, or all of them when nothing is in the way.
----@param spot Vector3
----@param seen_from number lowest_seen_height
----@param layer_top integer
----@return integer
-local function rows_to_show(spot, seen_from, layer_top)
-    if seen_from == 0 then
-        return view_size
+-- Which rows of the view to show for a seen range, in screen pixels: from
+-- where the top of what's seen is drawn, down to where its bottom is. All of
+-- them when the riches are seen whole.
+---@param column Vector3
+---@param range { from: number, to: number }
+---@param visible_height number
+---@param view_top integer
+---@return integer top
+---@return integer rows
+local function rows_to_show(column, range, visible_height, view_top)
+    local top, bottom = view_top, view_top + view_size
+    local function screen_y(height)
+        local on_screen = ScreenConvert.Vector3ToScreen(Vector3.new(column.x, column.y + height, column.z))
+        return on_screen and math.max(view_top, math.min(view_top + view_size, math.floor(on_screen.y)))
     end
-    local cut = ScreenConvert.Vector3ToScreen(Vector3.new(spot.x, spot.y + seen_from, spot.z))
-    if not cut then
-        return view_size
+    if range.from > 0 then
+        bottom = screen_y(range.from) or bottom
     end
-    return math.max(0, math.min(view_size, math.floor(cut.y) - layer_top))
+    if visible_height > 0 and range.to < visible_height then
+        top = screen_y(range.to) or top
+    end
+    return top, math.max(0, bottom - top)
 end
 
 -- Which way the screen's sideways is at the spot, as a direction across the
@@ -809,8 +879,8 @@ local function strip_layout(strip_count, riches_spot, pixels_per_unit)
     return layout
 end
 
--- Draws one strip: shows it down to where its slice of the riches goes
--- behind a low wall, or hides it if the slice is hidden all the way up.
+-- Draws one strip: shows the part of its slice of the riches that's seen (see
+-- seen_range), or hides it if none of the slice is.
 ---@param strip RichesStrip
 ---@param riches_spot RichesSpot
 ---@param place StripPlace
@@ -819,20 +889,24 @@ end
 ---@param view_top integer
 ---@return boolean shown
 local function draw_strip(strip, riches_spot, place, columns, view_left, view_top)
-    local best_column, best_seen_from
+    local visible_height = riches_spot.visible_height or 0
+    local best_column, best_range
     for _, column in ipairs(columns) do
-        local seen_from = lowest_seen_height(Camera.GetPosition(), column, riches_spot.visible_height or 0)
-        if seen_from and (not best_seen_from or seen_from < best_seen_from) then
-            best_column, best_seen_from = column, seen_from
+        local range = seen_range(Camera.GetPosition(), column, visible_height)
+        if range and (not best_range or range.to - range.from > best_range.to - best_range.from) then
+            best_column, best_range = column, range
         end
     end
-    if not best_seen_from then
+    if not best_range then
         strip.layer.hidden = true
         return false
     end
-    strip.layer:SetPos(view_left + place.left, view_top)
-    strip.layer:SetSize(place.width, rows_to_show(best_column, best_seen_from, view_top))
-    strip.group:SetPos(-place.left, 0)
+    local top, rows = rows_to_show(best_column, best_range, visible_height, view_top)
+    strip.layer:SetPos(view_left + place.left, top)
+    strip.layer:SetSize(place.width, rows)
+    -- The group stays where it was on screen, so moving the layer's top down
+    -- cuts off the riches' top.
+    strip.group:SetPos(-place.left, view_top - top)
     strip.layer.hidden = false
     return true
 end
@@ -898,6 +972,7 @@ local function draw()
     end
 
     update_game_fov()
+    prepare_obstacles()
     for _, riches_spot in ipairs(riches_spots.spots) do
         draw_spot(riches_spot)
     end

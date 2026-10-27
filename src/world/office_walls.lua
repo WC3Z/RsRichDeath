@@ -31,7 +31,7 @@ office_walls.boxes = {
     -- Western candle on Deaths desk
     { from = { 28, 38 }, to = { 28, 38 }, height = 500, offset = 1130 },
     -- Eastern candle on Deaths desk
-    { from = { 32, 38 }, to = { 32, 38 }, height = 500, offset = 1130 },
+    { from = { 32, 38 }, to = { 32, 38 }, height = 500, offset = 1130 }
 }
 
 -- A thin, straight wall, from the middle of one tile to the middle of another,
@@ -43,12 +43,12 @@ office_walls.boxes = {
 -- heights to the arch's height in the middle, in the pointed shape of the
 -- office's windows: { from = { 23, 39, 2500 }, to = { 24, 41, 2500 }, arch = 4200 }.
 ---@class WallLine
----@field from       number[] { local tile x, local tile z, height? } where the wall starts
----@field to         number[] { local tile x, local tile z, height? } where the wall ends
----@field height?    number   How high the wall goes above the ground, in fine units (a tile is 512 wide), at ends without their own
----@field arch?      number   How high the top of a pointed arch is above the ground, in the middle of the wall
----@field offset?    number   Moves the whole wall up, or down when negative, in fine units; its heights are measured from there
----@field thickness? number   How thick the wall is, in fine units, growing from the mapped line away from office_walls.middle (towards it when negative)
+---@field from       number[]      { local tile x, local tile z, height? } where the wall starts
+---@field to         number[]      { local tile x, local tile z, height? } where the wall ends
+---@field height?    number        How high the wall goes above the ground, in fine units (a tile is 512 wide), at ends without their own
+---@field arch?      number        How high the top of a pointed arch is above the ground, in the middle of the wall
+---@field offset?    number        Moves the whole wall up, or down when negative, in fine units; its heights are measured from there
+---@field thickness? number        How thick the wall is, in fine units, growing from the mapped line away from office_walls.middle (towards it when negative)
 ---@field openings?  WallOpening[] Holes through the wall, like doorways or the gap under a freestanding arch
 
 -- A hole through a wall line, from one side to the other (both on the floor,
@@ -90,6 +90,49 @@ office_walls.walls = {
     -- Wall from the western most wall to the western most window (west to east)
     { from = { 17, 37.5 }, to = { 23.5, 37.5 }, height = 2000, thickness = 250 },
 
+    -- Freestanding arches, from west to east. GUESSED: they span from the
+    -- north wall (z = 37.8) to the south wall (z = 31), are about 200 thick
+    -- and about as tall as Death's door (peak 5300). The opening under each
+    -- leaves legs about 0.4 tiles wide and a band about 300 thick on top.
+
+    -- Arch on the western most wall (north to south): the eastern most one
+    -- mirrored around x = 30, starting at the west side's north wall (z = 37.5)
+    {
+        from = { 17, 37.5 },
+        to = { 17, 30.5 },
+        height = 2500,
+        arch = 5000,
+        thickness = 200,
+        openings = { { from = { 17, 37.1 }, to = { 17, 31 }, height = 2300, arch = 4700 } }
+    },
+    -- First arch on the western side: the first eastern one mirrored
+    {
+        from = { 20.2, 37.5 },
+        to = { 20.2, 30.5 },
+        height = 2500,
+        arch = 5100,
+        thickness = 200,
+        openings = { { from = { 20.2, 37.1 }, to = { 20.2, 31 }, height = 2300, arch = 4900 } }
+    },
+    -- First arch on the eastern side
+    {
+        from = { 39.8, 37.8 },
+        to = { 39.8, 30.5 },
+        height = 2500,
+        arch = 5100,
+        thickness = 200,
+        openings = { { from = { 39.8, 37.4 }, to = { 39.8, 31 }, height = 2300, arch = 4900 } }
+    },
+    -- Arch on the eastern most wall (north to south)
+    {
+        from = { 43, 37.8 },
+        to = { 43, 30.5 },
+        height = 2500,
+        arch = 5000,
+        thickness = 200,
+        openings = { { from = { 43, 37.4 }, to = { 43, 31 }, height = 2300, arch = 4700 } }
+    },
+
     -- Windows and Death's door, from west to east
 
     -- Western most window (north to south)
@@ -105,7 +148,7 @@ office_walls.walls = {
     -- Small gap between windows (west to east)
     { from = { 35, 41 }, to = { 35.5, 41 }, height = 2800, offset = -700, thickness = 250 },
     -- Eastern most window (north to south)
-    { from = { 35.5, 41, 3000 }, to = { 36.5, 37.5, 3000 }, arch = 3800, offset = -700, thickness = 250 },
+    { from = { 35.5, 41, 3000 }, to = { 36.5, 37.5, 3000 }, arch = 3800, offset = -700, thickness = 250 }
 }
 
 -- Whether the boxes and walls are drawn in game as wireframes, to check they

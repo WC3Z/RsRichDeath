@@ -698,6 +698,47 @@ function tests.hides_narrow_riches_whole_behind_a_box_even_when_small_on_screen(
     end
 end
 
+-- A box just in front of the hoard, 2000 to 5000 above the ground, like the
+-- band of an arch: where the camera's line to the hoard's bottom crosses that
+-- tile it's at most about 1850 high, so it goes under the box, but its line to
+-- the hoard's top is about 2200 to 2850 high there, so it goes through it.
+local band_high_box = { from = { 31, 41 }, to = { 31, 41 }, height = 3000, offset = 2000 }
+
+function tests.cuts_off_the_top_of_the_strips_behind_something_high()
+    local game = start_in_office()
+    project_like_camera(game, 60)
+    office_walls.boxes = { band_high_box }
+
+    draw()
+
+    local layers = hoard_layers(game)
+    local view_top = layers[1].y -- the outer strips are whole
+    assert_helpers.equal(layers[1].height, view_size)
+    local strip = layers[4]
+    assert_helpers.equal(strip.hidden, false)
+    -- Its top is cut off, down to where the box's bottom edge crosses the
+    -- hoard, and its bottom is shown like a whole strip's.
+    assert_helpers.equal(strip.y > view_top, true)
+    assert_helpers.equal(strip.y + strip.height, view_top + view_size)
+    -- The group stays where it is on screen, inside the moved layer.
+    assert_helpers.equal(game.groups[3 + 3].y, view_top - strip.y)
+end
+
+function tests.shows_only_the_middle_of_strips_seen_between_two_things()
+    local game = start_in_office()
+    project_like_camera(game, 60)
+    office_walls.boxes = { desk_high_box, { from = { 31, 41 }, to = { 31, 41 }, height = 3000, offset = 1800 } }
+
+    draw()
+
+    local layers = hoard_layers(game)
+    local view_top = layers[1].y
+    local strip = layers[4]
+    assert_helpers.equal(strip.hidden, false)
+    assert_helpers.equal(strip.y > view_top, true)
+    assert_helpers.equal(strip.y + strip.height < view_top + view_size // 2, true)
+end
+
 function tests.hides_only_the_strips_behind_a_tall_box()
     local game = start_in_office()
     project_like_camera(game, 60)
