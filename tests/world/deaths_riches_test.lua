@@ -40,11 +40,13 @@ local function install()
     riches_spots.spots = test_spots()
     office_walls.boxes = {}
     office_walls.walls = {}
+    office_walls.pillars = {}
     office_walls.middle = { 30, 38 }
     office_walls.show = false
     fake_persistent_db.install()
-    -- Most tests are about strips, so they're on; see the detailed hiding tests.
-    db.set_detailed_hiding(true)
+    -- Most tests are about strips, so the most are allowed; see the hiding
+    -- detail tests.
+    db.set_hiding_strips(8)
     fake_event.install()
     return fake_game.install()
 end
@@ -161,9 +163,9 @@ function tests.builds_a_model_group_in_a_layer_per_strip()
     end
 end
 
-function tests.draws_every_spot_in_one_piece_without_detailed_hiding()
+function tests.draws_every_spot_in_one_piece_at_the_lowest_hiding_detail()
     local game = install()
-    db.set_detailed_hiding(false)
+    db.set_hiding_strips(1)
 
     deaths_riches.start()
 
@@ -172,12 +174,23 @@ function tests.draws_every_spot_in_one_piece_without_detailed_hiding()
     assert_helpers.equal(game.layers[3].width, view_size)
 end
 
-function tests.restart_picks_up_a_changed_setting()
+function tests.uses_the_fewer_of_the_settings_and_the_spots_strips()
     local game = install()
-    db.set_detailed_hiding(false)
+    db.set_hiding_strips(4)
+
     deaths_riches.start()
 
-    db.set_detailed_hiding(true)
+    -- The desk and the corner have no strips of their own, the hoard has 8.
+    assert_helpers.equal(#game.layers, 1 + 1 + 4)
+    assert_helpers.equal(game.layers[3].width, view_size // 4)
+end
+
+function tests.restart_picks_up_a_changed_setting()
+    local game = install()
+    db.set_hiding_strips(1)
+    deaths_riches.start()
+
+    db.set_hiding_strips(8)
     deaths_riches.restart()
 
     -- The first 3 layers are gone, and the new ones are in strips again.
@@ -1167,6 +1180,66 @@ function tests.draws_an_openings_outline_in_its_own_colour()
     assert_helpers.equal(corners[2].y, 3328 + 2000)
     assert_helpers.equal(round(corners[8].y), 3328 + 3500)
     assert_helpers.equal(corners[#corners].y, 3328)
+end
+
+-- A pillar on the camera's line to the desk's riches, about three tiles north
+-- of the desk, where that line is about 2700 above the ground.
+local function pillar_at(x, z, radius, height)
+    return { at = { x, z }, radius = radius, height = height }
+end
+
+function tests.hides_riches_behind_a_pillar()
+    local game = start_in_office()
+    office_walls.pillars = { pillar_at(29, 41, 100, 4000) }
+
+    draw()
+
+    assert_helpers.equal(layer_at(game, desk).hidden, true)
+end
+
+function tests.shows_riches_seen_beside_a_pillar()
+    local game = start_in_office()
+    -- Half a tile to the side, and only 100 wide: the line goes past it.
+    office_walls.pillars = { pillar_at(29.5, 41, 100, 4000) }
+
+    draw()
+
+    assert_helpers.equal(layer_at(game, desk).hidden, false)
+end
+
+function tests.shows_riches_seen_over_a_pillar()
+    local game = start_in_office()
+    office_walls.pillars = { pillar_at(29, 41, 100, 2000) }
+
+    draw()
+
+    assert_helpers.equal(layer_at(game, desk).hidden, false)
+end
+
+function tests.a_pillar_the_riches_are_inside_doesnt_hide_them()
+    local game = start_in_office()
+    office_walls.pillars = { pillar_at(29, 38, 200, 4000) }
+
+    draw()
+
+    assert_helpers.equal(layer_at(game, desk).hidden, false)
+end
+
+function tests.draws_a_pillar_as_two_circles_joined_up_the_sides()
+    local game = start_in_office()
+    office_walls.pillars = { { at = { 29, 41 }, radius = 100, height = 400, offset = 1130 } }
+    office_walls.show = true
+
+    draw()
+
+    assert_helpers.equal(#game.shapes, 1)
+    local corners = game.shapes[1].shapePositions
+    assert_helpers.equal(#corners, 24)
+    assert_helpers.equal(corners[1].y, 3328 + 1130)
+    assert_helpers.equal(corners[2].y, 3328 + 1130 + 400)
+    local function middle_of(square, tile) return (square * 64 + tile) * tile_size + tile_size // 2 end
+    assert_helpers.equal(round(corners[1].x), middle_of(6, 29) + 100)
+    assert_helpers.equal(round(corners[1].z), middle_of(10, 41))
 end
 
 function tests.draws_the_walls_when_asked_to()

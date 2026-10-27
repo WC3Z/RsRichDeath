@@ -119,4 +119,35 @@ function tests.a_line_through_an_opening_in_a_wall_misses_it()
         0, function() return 10 end, open_in_the_middle), true)
 end
 
+-- A pillar in the middle of (15, 15), 2 wide, from 0 up to 10.
+local function through_pillar(from, to)
+    return line_of_sight.passes_through_pillar(from, to, point(15, 0, 15), 2, 0, 10)
+end
+
+function tests.a_line_through_a_pillar_passes_through_it()
+    assert_helpers.equal(through_pillar(point(10, 5, 15), point(20, 5, 15)), true)
+end
+
+function tests.a_line_beside_a_pillar_misses_it()
+    assert_helpers.equal(through_pillar(point(10, 5, 18), point(20, 5, 18)), false)
+end
+
+function tests.a_line_over_a_pillar_misses_it()
+    assert_helpers.equal(through_pillar(point(10, 11, 15), point(20, 11, 15)), false)
+end
+
+function tests.a_line_that_ends_before_a_pillar_misses_it()
+    assert_helpers.equal(through_pillar(point(5, 5, 15), point(12, 5, 15)), false)
+end
+
+function tests.a_line_that_dips_into_a_pillars_top_passes_through_it()
+    -- 12 high when it gets to the pillar, but 8 by the time it leaves.
+    assert_helpers.equal(through_pillar(point(13, 12, 15), point(23, 2, 15)), true)
+end
+
+function tests.tells_whether_a_point_is_inside_a_pillar()
+    assert_helpers.equal(line_of_sight.is_inside_pillar(point(15.5, 5, 15), point(15, 0, 15), 2, 0, 10), true)
+    assert_helpers.equal(line_of_sight.is_inside_pillar(point(18, 5, 15), point(15, 0, 15), 2, 0, 10), false)
+end
+
 return tests

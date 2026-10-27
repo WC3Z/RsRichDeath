@@ -2,7 +2,7 @@ local Db = {}
 
 local render_deaths_riches_key = "renderDeathRiches"
 local show_office_walls_key = "showOfficeWalls"
-local detailed_hiding_key = "detailedHiding"
+local hiding_strips_key = "hidingStrips"
 local death_cost_key = "deathCost"
 
 -- Get whether we should render death's riches or not
@@ -36,17 +36,17 @@ function Db.set_show_office_walls(selected)
 end
 
 
--- Get whether riches are hidden in strips (see RichesSpot's strips), which
--- looks better but costs frame rate. Off until turned on.
----@return boolean
-function Db.get_detailed_hiding()
-    return PersistentDB:GetBool(detailed_hiding_key) == true
+-- Get how many strips riches are hidden in at most (see RichesSpot's
+-- strips). More looks better but costs frame rate; 1 until changed.
+---@return integer
+function Db.get_hiding_strips()
+    return PersistentDB:GetInt(hiding_strips_key) or 1
 end
 
--- Set whether riches are hidden in strips
----@param selected boolean
-function Db.set_detailed_hiding(selected)
-    PersistentDB:SetBool(detailed_hiding_key, selected)
+-- Set how many strips riches are hidden in at most
+---@param strips integer
+function Db.set_hiding_strips(strips)
+    PersistentDB:SetInt(hiding_strips_key, strips)
 end
 
 

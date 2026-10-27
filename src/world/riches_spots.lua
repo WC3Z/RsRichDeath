@@ -14,7 +14,7 @@ local riches_spots = {}
 ---@field visible_height? number How tall the riches are, in fine units. Used to show the part sticking up over low walls like Death's desk; without it, riches whose bottom is hidden are hidden whole.
 ---@field visible_width? number How wide the riches are, in fine units. With strips, their width is split into the strips, so each strip covers the same part of them however big they are on screen; without it, the whole view is split.
 ---@field occluders? string[] EXPERIMENT: config names of locs near the spot (like Death's desk, "BSLAY_2014_DESKBASE") whose models are drawn in the riches' groups too, so the group itself hides the riches behind them, edge for edge.
----@field strips? integer How many side-by-side strips the riches are drawn in (1 if not given). Each strip is cut off on its own, so the riches can go behind a slanted wall edge or part of the way behind a pillar. Each strip draws the models again, so keep it low.
+---@field strips? integer The most side-by-side strips the riches are drawn in (1 if not given); the "Hiding detail" slider picks how many, up to this. Each strip is cut off on its own, so the riches can go behind a slanted wall edge or part of the way behind a pillar. Each strip draws the models again, which costs frame rate.
 
 -- Death's desk, which the player has to be near for the riches to show.
 riches_spots.desk_tile = { 0, 6, 10, 29, 38 }
@@ -33,7 +33,7 @@ riches_spots.spots = {
     {
         tile = { 0, 6, 10, 34, 40 }, height = 0,
         items = { "HUMAN_FURNITURE_GOLD_PILE_PLINTH", "HUMAN_FURNITURE_GOLD_PILE_COINS_HUGE" }, item_scale = 1,
-        visible_height = 1800, visible_width = 900, strips = 4,
+        visible_height = 1800, visible_width = 900, strips = 8,
         -- EXPERIMENT, off: hides the hoard behind a copy of Death's desk model,
         -- edge for edge, but the copy can't be made invisible (alpha, colour
         -- and rgba are ignored, and the material swap in deaths_riches needs

@@ -226,9 +226,10 @@ end
 ---@param riches_spot RichesSpot
 ---@return SpotView
 local function create_view(riches_spot)
-    -- Strips only with detailed hiding on, as each one draws the riches again
-    -- and they cost a lot of frame rate (about 50-60 down to 30-35 with 8).
-    local strip_count = db.get_detailed_hiding() and riches_spot.strips or 1
+    -- As many strips as the "Hiding detail" setting allows, up to the spot's
+    -- own. Each strip draws the riches again, which costs a lot of frame rate
+    -- (about 50-60 down to 30-35 with 8).
+    local strip_count = math.max(1, math.min(db.get_hiding_strips(), riches_spot.strips or 1))
     local strip_width = view_size // strip_count
     local view = { strips = {} }
     for index = 0, strip_count - 1 do
@@ -547,8 +548,27 @@ end
 ---@field top_at fun(along: number): number
 ---@field is_open_at (fun(along: number, height: number): boolean)?
 
----@type { boxes: { min: Vector3, max: Vector3 }[], walls: PreparedWall[] }
-local obstacles = { boxes = {}, walls = {} }
+-- A pillar worked out in the world: its middle at its bottom, and its top.
+---@class PreparedPillar
+---@field centre Vector3
+---@field radius number
+---@field top number
+
+---@type { boxes: { min: Vector3, max: Vector3 }[], walls: PreparedWall[], pillars: PreparedPillar[] }
+local obstacles = { boxes = {}, walls = {}, pillars = {} }
+
+-- Where a pillar is in the world, or nil while the ground there hasn't loaded.
+---@param pillar WallPillar
+---@return PreparedPillar?
+local function prepare_pillar(pillar)
+    local middle = office_tile_middle(pillar.at)
+    local ground_height = World.GetGroundHeight(0, math.floor(middle.x), math.floor(middle.z))
+    if ground_height <= 0 then
+        return nil
+    end
+    local bottom = ground_height + (pillar.offset or 0)
+    return { centre = Vector3.new(middle.x, bottom, middle.z), radius = pillar.radius, top = bottom + pillar.height }
+end
 
 local function prepare_obstacles()
     local boxes, walls = {}, {}
@@ -569,12 +589,16 @@ local function prepare_obstacles()
             })
         end
     end
-    obstacles = { boxes = boxes, walls = walls }
+    local pillars = {}
+    for _, pillar in ipairs(office_walls.pillars) do
+        table.insert(pillars, prepare_pillar(pillar))
+    end
+    obstacles = { boxes = boxes, walls = walls, pillars = pillars }
 end
 
--- Whether a wall box or line is between the camera and the spot. A box the
--- spot is inside doesn't count, or riches standing against a wall would never
--- show.
+-- Whether a wall box, line or pillar is between the camera and the spot. A
+-- box or pillar the spot is inside doesn't count, or riches standing against a
+-- wall would never show.
 ---@param camera_position Vector3
 ---@param spot Vector3
 ---@return boolean
@@ -582,6 +606,13 @@ local function is_behind_wall(camera_position, spot)
     for _, box in ipairs(obstacles.boxes) do
         if not line_of_sight.is_inside_box(spot, box.min, box.max)
             and line_of_sight.passes_through_box(camera_position, spot, box.min, box.max) then
+            return true
+        end
+    end
+    for _, pillar in ipairs(obstacles.pillars) do
+        local centre, bottom = pillar.centre, pillar.centre.y
+        if not line_of_sight.is_inside_pillar(spot, centre, pillar.radius, bottom, pillar.top)
+            and line_of_sight.passes_through_pillar(camera_position, spot, centre, pillar.radius, bottom, pillar.top) then
             return true
         end
     end
@@ -682,8 +713,50 @@ local function draw_wall_joins(inner, outer, top_at)
     })
 end
 
--- Has the game draw each wall box and line as a wireframe, on top of everything.
+-- How many straight pieces a pillar's circles are drawn with.
+local pillar_draw_pieces = 12
+
+-- Has the game draw a pillar as a wireframe: a circle at its bottom and its
+-- top, and a few lines up its sides.
+---@param pillar PreparedPillar
+local function draw_pillar(pillar)
+    local positions, lines = {}, {}
+    for piece = 0, pillar_draw_pieces - 1 do
+        local angle = 2 * math.pi * piece / pillar_draw_pieces
+        local x = pillar.centre.x + pillar.radius * math.cos(angle)
+        local z = pillar.centre.z + pillar.radius * math.sin(angle)
+        table.insert(positions, Vector3.new(x, pillar.centre.y, z))
+        table.insert(positions, Vector3.new(x, pillar.top, z))
+    end
+    for piece = 0, pillar_draw_pieces - 1 do
+        local bottom, top = 2 * piece, 2 * piece + 1
+        local next_bottom, next_top = (bottom + 2) % (2 * pillar_draw_pieces), (top + 2) % (2 * pillar_draw_pieces)
+        for _, index in ipairs({ bottom, next_bottom, top, next_top }) do
+            table.insert(lines, index)
+        end
+        if piece % 3 == 0 then
+            table.insert(lines, bottom)
+            table.insert(lines, top)
+        end
+    end
+    ShapeList.Draw({
+        shapePositions = positions,
+        shapeLines = lines,
+        ignoreDepth = true,
+        colour = 0xFF8800FF,
+        lineWidth = 2,
+    })
+end
+
+-- Has the game draw each wall box, line and pillar as a wireframe, on top of
+-- everything.
 local function draw_walls()
+    for _, pillar in ipairs(office_walls.pillars) do
+        local prepared = prepare_pillar(pillar)
+        if prepared then
+            draw_pillar(prepared)
+        end
+    end
     for _, box in ipairs(office_walls.boxes) do
         local min, max = wall_corners(box)
         if min and max then
@@ -1166,7 +1239,7 @@ function deaths_riches.start()
     Event.KeyDown.Subscribe(see_through_subscription_name, on_see_through_key)
 end
 
--- Starts again from scratch, to pick up a changed setting like detailed hiding.
+-- Starts again from scratch, to pick up a changed setting like hiding detail.
 function deaths_riches.restart()
     deaths_riches.stop()
     deaths_riches.start()

@@ -24,6 +24,12 @@ function SimpleView:AddText(value)
 end
 
 -- Checkboxes are kept by value.
+-- Keeps the options of every slider added, in order.
+function SimpleView:AddSlider(options)
+    self.sliders = self.sliders or {}
+    table.insert(self.sliders, options)
+end
+
 function SimpleView:AddCheckboxButton(buttons, options)
     self.checkboxes[buttons[1].value] = {
         text = buttons[1].text,

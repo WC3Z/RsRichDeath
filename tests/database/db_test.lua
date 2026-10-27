@@ -32,18 +32,18 @@ function tests.remembers_that_the_wall_outlines_were_turned_on()
     assert_helpers.equal(db.get_show_office_walls(), true)
 end
 
-function tests.detailed_hiding_is_off_until_turned_on()
+function tests.hides_in_one_strip_until_changed()
     fake_persistent_db.install()
 
-    assert_helpers.equal(db.get_detailed_hiding(), false)
+    assert_helpers.equal(db.get_hiding_strips(), 1)
 end
 
-function tests.remembers_that_detailed_hiding_was_turned_on()
+function tests.remembers_how_many_strips_to_hide_in()
     fake_persistent_db.install()
 
-    db.set_detailed_hiding(true)
+    db.set_hiding_strips(4)
 
-    assert_helpers.equal(db.get_detailed_hiding(), true)
+    assert_helpers.equal(db.get_hiding_strips(), 4)
 end
 
 function tests.death_cost_starts_at_zero()

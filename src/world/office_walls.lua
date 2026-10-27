@@ -28,10 +28,10 @@ office_walls.middle = { 30, 38 }
 office_walls.boxes = {
     -- Deaths desk
     { from = { 27.8, 38 }, to = { 32.2, 38.3 }, height = 1130 },
-    -- Western candle on Deaths desk
-    { from = { 28, 38 }, to = { 28, 38 }, height = 500, offset = 1130 },
-    -- Eastern candle on Deaths desk
-    { from = { 32, 38 }, to = { 32, 38 }, height = 500, offset = 1130 }
+    -- The candles on Deaths desk are pillars now (see office_walls.pillars);
+    -- these were the boxes around them.
+    --{ from = { 28.3, 38 }, to = { 28.3, 38 }, height = 600, offset = 1130 },
+    --{ from = { 32, 38 }, to = { 32, 38 }, height = 600, offset = 1130 }
 }
 
 -- A thin, straight wall, from the middle of one tile to the middle of another,
@@ -101,9 +101,9 @@ office_walls.walls = {
         from = { 17, 37.5 },
         to = { 17, 30.5 },
         height = 2500,
-        arch = 5000,
+        arch = 4500,
         thickness = 200,
-        openings = { { from = { 17, 37.1 }, to = { 17, 31 }, height = 2300, arch = 4700 } }
+        openings = { { from = { 17, 37.1 }, to = { 17, 31 }, height = 2300, arch = 4250 } }
     },
     -- First arch on the western side: the first eastern one mirrored
     {
@@ -149,6 +149,36 @@ office_walls.walls = {
     { from = { 35, 41 }, to = { 35.5, 41 }, height = 2800, offset = -700, thickness = 250 },
     -- Eastern most window (north to south)
     { from = { 35.5, 41, 3000 }, to = { 36.5, 37.5, 3000 }, arch = 3800, offset = -700, thickness = 250 }
+}
+
+-- A standing cylinder, like a candle or a round pillar: round seen from
+-- above, the same size all the way up, going up from the ground. Unlike boxes,
+-- it can be any size, and riches show through the gaps between them.
+---@class WallPillar
+---@field at      number[] { local tile x, local tile z } of its middle
+---@field radius  number   In fine units (a tile is 512 wide)
+---@field height  number   How high it goes above the ground, in fine units
+---@field offset? number   Moves it up, or down when negative, in fine units, like onto a desk
+
+-- The candles on Death's desk, standing on it (1130 up). Their places are
+-- measured with Shift+M looking straight down; their heights are a first
+-- guess, still to be tuned (Shift+H gives one from the floor, so take off the
+-- desk's 1130).
+---@type WallPillar[]
+office_walls.pillars = {
+    -- Western candles
+    { at = { 28.30, 37.83 }, radius = 45, height = 300, offset = 1130 },
+    { at = { 28.15, 38.35 }, radius = 45, height = 450, offset = 1130 },
+    { at = { 28.25, 38.25 }, radius = 55, height = 400, offset = 1130 },
+    { at = { 28.08, 38.05 }, radius = 55, height = 600, offset = 1130 },
+    { at = { 27.93, 38.27 }, radius = 55, height = 600, offset = 1130 },
+    -- Eastern candles
+    { at = { 32.09, 37.76 }, radius = 45, height = 300, offset = 1130 },
+    { at = { 31.82, 38.02 }, radius = 55, height = 400, offset = 1130 },
+    { at = { 31.59, 38.03 }, radius = 45, height = 400, offset = 1130 },
+    { at = { 31.50, 38.12 }, radius = 45, height = 250, offset = 1130 },
+    { at = { 31.67, 38.27 }, radius = 55, height = 450, offset = 1130 },
+    { at = { 32.06, 38.27 }, radius = 55, height = 600, offset = 1130 },
 }
 
 -- Whether the boxes and walls are drawn in game as wireframes, to check they

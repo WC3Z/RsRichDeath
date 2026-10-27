@@ -1,5 +1,5 @@
--- Whether a straight line between two points in the world passes through a box
--- or a wall.
+-- Whether a straight line between two points in the world passes through a box,
+-- a wall or a pillar.
 local line_of_sight = {}
 
 local axes = { "x", "y", "z" }
@@ -92,6 +92,58 @@ function line_of_sight.passes_through_wall(from, to, wall_start, wall_end, botto
         return false
     end
     return not (is_open_at and is_open_at(along_wall, height))
+end
+
+-- Whether the line from one point to another passes through a standing
+-- cylinder, like a candle: round seen from above, with its middle at centre
+-- (only x and z are used), from bottom up to top. Seen from above, the part of
+-- the line inside the circle is found; the line passes through if it's
+-- between the bottom and the top anywhere along that part.
+---@param from Vector3
+---@param to Vector3
+---@param centre Vector3
+---@param radius number
+---@param bottom number
+---@param top number
+---@return boolean
+function line_of_sight.passes_through_pillar(from, to, centre, radius, bottom, top)
+    local line_x, line_z = to.x - from.x, to.z - from.z
+    local gap_x, gap_z = from.x - centre.x, from.z - centre.z
+    -- Where the line is radius away from the middle: solving
+    -- |gap + along * line| = radius for along (0 at from, 1 at to).
+    local a = line_x ^ 2 + line_z ^ 2
+    if a == 0 then
+        return false -- straight up or down, seen from above it's a point
+    end
+    local b = 2 * (gap_x * line_x + gap_z * line_z)
+    local c = gap_x ^ 2 + gap_z ^ 2 - radius ^ 2
+    local discriminant = b ^ 2 - 4 * a * c
+    if discriminant < 0 then
+        return false -- misses the circle
+    end
+    local root = math.sqrt(discriminant)
+    local enters = math.max(0, (-b - root) / (2 * a))
+    local leaves = math.min(1, (-b + root) / (2 * a))
+    if enters >= leaves then
+        return false
+    end
+
+    local height_entering = from.y + (to.y - from.y) * enters
+    local height_leaving = from.y + (to.y - from.y) * leaves
+    local lowest, highest = math.min(height_entering, height_leaving), math.max(height_entering, height_leaving)
+    return highest >= bottom and lowest <= top
+end
+
+-- Whether a point is inside a standing cylinder (see passes_through_pillar).
+---@param point Vector3
+---@param centre Vector3
+---@param radius number
+---@param bottom number
+---@param top number
+---@return boolean
+function line_of_sight.is_inside_pillar(point, centre, radius, bottom, top)
+    return (point.x - centre.x) ^ 2 + (point.z - centre.z) ^ 2 <= radius ^ 2
+        and point.y >= bottom and point.y <= top
 end
 
 return line_of_sight

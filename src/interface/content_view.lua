@@ -108,20 +108,18 @@ function content_view.start()
                 end
             })
 
-        view:AddCheckboxButton({
-            {
-                text = "Detailed hiding",
-                value = "detailedHiding",
-                selected = db.get_detailed_hiding(),
-                tooltip = "Hides the riches behind things more precisely, but lowers the frame rate"
-            }
-        },
-            {
-                onChange = function (_, _, _, selected)
-                    db.set_detailed_hiding(selected)
-                    deaths_riches.restart()
-                end
-            })
+        view:AddText("Hiding detail")
+        view:AddSlider({
+            min = 1,
+            max = 8,
+            step = 1,
+            value = db.get_hiding_strips(),
+            tooltip = "How many strips the riches are split into to hide them behind things. More looks better, but lowers the frame rate",
+            onChange = function (_, strips)
+                db.set_hiding_strips(strips)
+                deaths_riches.restart()
+            end
+        })
     end)
 end
 
