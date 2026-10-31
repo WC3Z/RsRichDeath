@@ -2,7 +2,7 @@
 # Copies the plugin into Rich-Death/, leaving out the tests.
 #
 #   ./build.sh           dev build, plugin.json as it is in the repo
-#   ./build.sh release   release build, optional permissions become required
+#   ./build.sh release   release build, without console commands; optional permissions become required
 #
 # To also copy dev builds into your game's dev_plugins folder, create
 # build.local.sh (gitignored) with e.g.:
@@ -30,6 +30,13 @@ mkdir -p "$out_dir"
 cp -r main.lua plugin.json src "$out_dir/"
 
 if [[ "$build_type" == "release" ]]; then
+    # Console commands (like granting permissions while developing) aren't
+    # allowed in published plugins.
+    find "$out_dir" -name "*.lua" -exec sed -i '/^[[:space:]]*ExecuteConsoleCommand(/d' {} +
+    if grep -rq "ExecuteConsoleCommand" "$out_dir" --include="*.lua"; then
+        echo "Could not remove every ExecuteConsoleCommand from $out_dir" >&2
+        exit 1
+    fi
     sed -i 's/"optionalPermissions"/"requiredPermissions"/' "$out_dir/plugin.json"
     if grep -q '"optionalPermissions"' "$out_dir/plugin.json"; then
         echo "Could not make the permissions required in $out_dir/plugin.json" >&2

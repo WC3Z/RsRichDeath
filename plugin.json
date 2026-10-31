@@ -6,7 +6,8 @@
         "prettyui": 6398181
     },
     "optionalPermissions": [
-        "chatAccess"
+        "chatAccess",
+        "trackingAccess"
     ],
     "hasRibbonIcon": true
 }
