@@ -10,6 +10,8 @@ account_storage.start()
 content_view.start()
 death_cost_listener.start()
 
+-- TODO - investrigate ui.Interfaces:GetComponent(id.Component.DEATH__RECLAIM_COST).content
+
 function PluginShutdown()
     content_view.stop()
     death_cost_listener.stop()

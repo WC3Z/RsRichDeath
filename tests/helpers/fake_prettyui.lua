@@ -42,6 +42,10 @@ function fake_prettyui.install()
     prettyui = {
         SimpleView = {
             new = function(parent, options)
+                -- prettyui 1.3 warns when a root leaves categoryID out, and 2.0 makes "auto" the default.
+                if (options or {}).categoryID ~= "auto" then
+                    error("SimpleView must be created with categoryID = \"auto\"", 2)
+                end
                 local view = setmetatable({
                     parent = parent, options = options, texts = {}, checkboxes = {},
                     content = { kind = "content" },

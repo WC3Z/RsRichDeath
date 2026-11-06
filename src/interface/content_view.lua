@@ -58,6 +58,7 @@ function content_view.start()
 
         local parent = event.component
         view = prettyui.SimpleView.new(parent, {
+            categoryID = "auto",
             width = parent.width,
             height = parent.height,
             scrollable = true
