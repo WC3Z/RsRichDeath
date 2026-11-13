@@ -5,15 +5,18 @@ local fake_event = require("tests/helpers/fake_event")
 local fake_persistent_db = require("tests/helpers/fake_persistent_db")
 local fake_prettyui = require("tests/helpers/fake_prettyui")
 
--- Starts the content view on fresh fakes, with the given death cost saved.
+-- Starts the content view on fresh fakes, with the given death cost and number of deaths saved.
 ---@return table created Every view the content view has made
-local function start(death_cost)
+local function start(death_cost, death_count)
     content_view.stop()
     fake_persistent_db.install()
     fake_event.install()
     local created = fake_prettyui.install()
     if death_cost then
         db.add_death_cost(death_cost)
+    end
+    for _ = 1, death_count or 0 do
+        db.increment_death_count()
     end
     content_view.start()
     return created
@@ -23,9 +26,24 @@ local function open_page()
     Event.ContentLayerReady.fire({ component = { width = 300, height = 400 } })
 end
 
--- The total shown on the newest page.
+-- The text on the newest page that starts with the given label.
+local function find_text(created, label)
+    for _, text in ipairs(created[#created].texts) do
+        if text.content:sub(1, #label) == label then
+            return text
+        end
+    end
+    error("no text starting with \"" .. label .. "\"", 2)
+end
+
+-- The total cost shown on the newest page.
 local function shown_total(created)
-    return created[#created].texts[1].content
+    return find_text(created, "Total death cost:").content
+end
+
+-- The number of deaths shown on the newest page.
+local function shown_deaths(created)
+    return find_text(created, "Total deaths:").content
 end
 
 local tests = {}
@@ -86,7 +104,7 @@ function tests.shows_the_full_total_in_a_tooltip_when_shortened()
 
     open_page()
 
-    assert_helpers.equal(created[1].texts[1].tooltip, "1,234,567 gp")
+    assert_helpers.equal(find_text(created, "Total death cost:").tooltip, "1,234,567 gp")
 end
 
 function tests.has_no_tooltip_when_the_total_is_shown_in_full()
@@ -94,7 +112,34 @@ function tests.has_no_tooltip_when_the_total_is_shown_in_full()
 
     open_page()
 
-    assert_helpers.equal(created[1].texts[1].tooltip, nil)
+    assert_helpers.equal(find_text(created, "Total death cost:").tooltip, nil)
+end
+
+function tests.shows_the_number_of_deaths()
+    local created = start(nil, 3)
+
+    open_page()
+
+    assert_helpers.equal(shown_deaths(created), "Total deaths: 3")
+end
+
+function tests.shows_zero_deaths_before_the_first_one()
+    local created = start()
+
+    open_page()
+
+    assert_helpers.equal(shown_deaths(created), "Total deaths: 0")
+end
+
+function tests.shows_the_number_of_deaths_above_the_total()
+    local created = start()
+
+    open_page()
+
+    local texts = created[1].texts
+    assert_helpers.equal(#texts, 2)
+    assert_helpers.equal(texts[1].content, "Total deaths: 0")
+    assert_helpers.equal(texts[2].content, "Total death cost: 0 gp")
 end
 
 function tests.refresh_shows_the_new_total()
@@ -105,6 +150,17 @@ function tests.refresh_shows_the_new_total()
     content_view.refresh()
 
     assert_helpers.equal(shown_total(created), "Total death cost: 1,500 gp")
+end
+
+function tests.refresh_shows_the_new_number_of_deaths()
+    local created = start(nil, 1)
+    open_page()
+
+    db.increment_death_count()
+    content_view.refresh()
+
+    assert_helpers.equal(shown_deaths(created), "Total deaths: 2")
+    assert_helpers.equal(#created[1].texts, 2)
 end
 
 function tests.refresh_does_nothing_before_the_page_is_opened()

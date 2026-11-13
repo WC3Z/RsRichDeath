@@ -13,6 +13,7 @@ function death_cost_listener.start()
             local amount = message:match("[Yy]ou pay ([%d,]+) coins and retrieve your items")
 
             if amount then
+                db.increment_death_count();
                 -- cost will contain "," at some point, E.G 800,000
                 local cost = tonumber((amount:gsub(",", "")))
                 db.add_death_cost(cost)

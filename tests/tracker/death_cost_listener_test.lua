@@ -49,6 +49,15 @@ function tests.adds_up_each_death()
     assert_helpers.equal(db.get_death_cost(), 1000000)
 end
 
+function tests.counts_each_death()
+    start()
+
+    chat("You pay 800,000 coins and retrieve your items.")
+    chat("You pay 200,000 coins and retrieve your items.")
+
+    assert_helpers.equal(db.get_death_count(), 2)
+end
+
 function tests.ignores_other_messages()
     start()
 
@@ -56,6 +65,7 @@ function tests.ignores_other_messages()
     chat("Welcome to RuneScape.")
 
     assert_helpers.equal(db.get_death_cost(), 0)
+    assert_helpers.equal(db.get_death_count(), 0)
 end
 
 function tests.ignores_other_chat_types()

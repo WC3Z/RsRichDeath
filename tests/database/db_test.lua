@@ -33,4 +33,19 @@ function tests.adds_up_death_costs()
     assert_helpers.equal(db.get_death_cost(), 850000)
 end
 
+function tests.death_count_starts_at_zero()
+    fake_persistent_db.install()
+
+    assert_helpers.equal(db.get_death_count(), 0)
+end
+
+function tests.counts_each_death()
+    fake_persistent_db.install()
+
+    db.increment_death_count()
+    db.increment_death_count()
+
+    assert_helpers.equal(db.get_death_count(), 2)
+end
+
 return tests

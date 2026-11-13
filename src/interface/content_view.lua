@@ -1,7 +1,8 @@
 local db = require("src/database/db")
 
 local content_view = {}
-local text
+local deathCostText
+local deathCountText
 local view
 local tooltip_owner
 
@@ -68,20 +69,22 @@ function content_view.start()
         view:AddTitle("Rich Death")
 
         local deathCost = db.get_death_cost()
+        local deathCount = db.get_death_count()
 
-        text = view:AddText("Total death cost: " .. format_gp_short(deathCost))
+        deathCountText = view:AddText("Total deaths: " .. deathCount)
+        deathCostText = view:AddText("Total death cost: " .. format_gp_short(deathCost))
         local tooltip = getTooltip(deathCost)
 
-        prettyui.Tooltip.bind(tooltip_owner, text, view.content, tooltip)
+        prettyui.Tooltip.bind(tooltip_owner, deathCostText, view.content, tooltip)
 
-        --view:AddCheckboxButton({
+        -- view:AddCheckboxButton({
         --    {
         --        text = "Render Death's riches",
         --        value = "renderDeathRiches",
         --        selected = db.get_render_deaths_riches(),
         --        tooltip = nil
         --    }
-        --},
+        -- },
         --    {
         --        onChange = function (_, _, _, selected)
         --            db.set_render_deaths_riches(selected)
@@ -92,11 +95,16 @@ end
 
 -- Shows the latest cost if the page has been opened.
 function content_view.refresh()
-    if text then
+    if deathCostText then
         local deathCost = db.get_death_cost()
         local tooltip = getTooltip(deathCost)
-        text.content = "Total death cost: " .. format_gp_short(deathCost)
+        deathCostText.content = "Total death cost: " .. format_gp_short(deathCost)
         prettyui.Tooltip.set(tooltip_owner, tooltip)
+    end
+
+    if deathCountText then
+        local deathCount = db.get_death_count()
+        deathCountText.content = "Total deaths: " .. deathCount
     end
 end
 
@@ -105,7 +113,8 @@ function content_view.stop()
     if view then
         view:Destroy()
         view = nil
-        text = nil
+        deathCostText = nil
+        deathCountText = nil
         tooltip_owner = {}
     end
 end
